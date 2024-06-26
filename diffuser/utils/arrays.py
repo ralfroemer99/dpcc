@@ -31,6 +31,8 @@ def to_device(x, device=DEVICE):
 		return {k: to_device(v, device) for k, v in x.items()}
 	else:
 		raise RuntimeError(f'Unrecognized type in `to_device`: {type(x)}')
+		# print(f'Unrecognized type in `to_device`: {type(x)}')
+		# pdb.set_trace()
 
 def batchify(batch):
 	'''

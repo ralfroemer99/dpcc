@@ -52,8 +52,9 @@ class UNet1DTemporalModel(ModelMixin, ConfigMixin):
     def __init__(
         self,
         horizon,
-        observation_dim,
-        action_dim,
+        transition_dim,
+        # observation_dim,
+        # action_dim,
         goal_dim=0,
         dim=32,
         dim_mults=(1, 2, 4, 8),
@@ -61,12 +62,12 @@ class UNet1DTemporalModel(ModelMixin, ConfigMixin):
     ):
         super().__init__()
 
-        self.observation_dim = observation_dim
-        self.action_dim = action_dim
+        # self.observation_dim = observation_dim
+        # self.action_dim = action_dim
         self.goal_dim = goal_dim
         self.horizon = horizon
 
-        transition_dim = observation_dim + action_dim
+        # transition_dim = observation_dim + action_dim
         dims = [transition_dim, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
         # print(f'[ models/temporal ] Channel dimensions: {in_out}')
@@ -162,7 +163,7 @@ class UNet1DTemporalModel(ModelMixin, ConfigMixin):
         sample = einops.rearrange(sample, 'b t h -> b h t')
 
         # Condition
-        if condition is not None:
-            sample = apply_conditioning(sample, condition, self.action_dim, self.goal_dim)
+        # if condition is not None:
+        #     sample = apply_conditioning(sample, condition, self.action_dim, self.goal_dim)
 
         return sample

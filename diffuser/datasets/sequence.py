@@ -8,7 +8,7 @@ from .d4rl import sequence_dataset
 from .normalization import DatasetNormalizer
 from .buffer import ReplayBuffer
 
-
+RewardBatch = namedtuple('RewardBatch', 'trajectories conditions returns')
 Batch = namedtuple('Batch', 'trajectories conditions')
 ValueBatch = namedtuple('ValueBatch', 'trajectories conditions values')
 
@@ -16,19 +16,25 @@ ValueBatch = namedtuple('ValueBatch', 'trajectories conditions values')
 class SequenceDataset(torch.utils.data.Dataset):
 
     def __init__(self, env='hopper-medium-replay', horizon=64, normalizer='LimitsNormalizer', 
-                 preprocess_fns=[], max_path_length=1000, max_n_episodes=100000, 
-                 termination_penalty=0, use_padding=False, use_actions=True, seed=None):
+                 preprocess_fns=[], max_path_length=100, max_n_episodes=100000, 
+                 termination_penalty=0, use_padding=False, discount=0.99, returns_scale=1000, include_returns=False):
         self.preprocess_fn = get_preprocess_fn(preprocess_fns, env)
-        # self.env = env = load_environment(env)
-        # self.env.seed(seed)
         self.horizon = horizon
         self.max_path_length = max_path_length
         self.use_padding = use_padding
-        self.use_actions = use_actions
+
+        # Rewards
+        self.returns_scale = returns_scale
+        self.discount = discount
+        self.discounts = self.discount ** np.arange(self.max_path_length)[:, None]
+        self.include_returns = include_returns
+
         itr = sequence_dataset(env, self.preprocess_fn)
 
         fields = ReplayBuffer(max_n_episodes, max_path_length, termination_penalty)
         for i, episode in enumerate(itr):
+            if i >= max_n_episodes:
+                break
             fields.add_path(episode)
         fields.finalize()
 
@@ -36,10 +42,7 @@ class SequenceDataset(torch.utils.data.Dataset):
         self.indices = self.make_indices(fields.path_lengths, horizon)
 
         self.observation_dim = fields.observations.shape[-1]
-        if self.use_actions:
-            self.action_dim = fields.actions.shape[-1]
-        else:
-            self.action_dim = 0
+        self.action_dim = fields.actions.shape[-1]
         self.fields = fields
         self.n_episodes = fields.n_episodes
         self.path_lengths = fields.path_lengths
@@ -98,14 +101,20 @@ class SequenceDataset(torch.utils.data.Dataset):
         path_ind, start, end = self.indices[idx]
 
         observations = self.fields.normed_observations[path_ind, start:end]
-        if self.use_actions:
-            actions = self.fields.normed_actions[path_ind, start:end]
-            trajectories = np.concatenate([actions, observations], axis=-1)
-        else:
-            trajectories = observations
+        actions = self.fields.normed_actions[path_ind, start:end]
 
+        trajectories = np.concatenate([actions, observations], axis=-1)
         conditions = self.get_conditions(observations)
-        batch = Batch(trajectories, conditions)
+
+        if self.include_returns:
+            rewards = self.fields.rewards[path_ind, start:]
+            discounts = self.discounts[:len(rewards)]
+            returns = (discounts * rewards).sum()
+            returns = np.array([returns/self.returns_scale], dtype=np.float32)
+            batch = RewardBatch(trajectories, conditions, returns)
+            # batch = Batch(trajectories, conditions)
+        else:
+            batch = Batch(trajectories, conditions)
         return batch
 
 

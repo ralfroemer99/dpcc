@@ -7,7 +7,7 @@ import pdb
 from collections import namedtuple
 
 # DiffusionExperiment = namedtuple('Diffusion', 'dataset renderer model diffusion ema trainer epoch')
-DiffusionExperiment = namedtuple('Diffusion', 'dataset model ema trainer epoch losses')
+DiffusionExperiment = namedtuple('Diffusion', 'dataset model diffusion trainer epoch losses')
 
 def mkdir(savepath):
     """
@@ -51,15 +51,15 @@ def load_losses(*loadpath):
 def load_diffusion(*loadpath, epoch='latest', device='cuda:0', seed=None):
     dataset_config = load_config(*loadpath, 'dataset_config.pkl')
     model_config = load_config(*loadpath, 'model_config.pkl')
-    # diffusion_config = load_config(*loadpath, 'diffusion_config.pkl')
+    diffusion_config = load_config(*loadpath, 'diffusion_config.pkl')
     trainer_config = load_config(*loadpath, 'trainer_config.pkl')
 
     trainer_config._dict['results_folder'] = os.path.join(*loadpath)
 
-    dataset = dataset_config(seed=seed)
+    dataset = dataset_config()
     model = model_config()
-    # diffusion = diffusion_config(model)
-    trainer = trainer_config(model=model, dataset=dataset)
+    diffusion = diffusion_config(model)
+    trainer = trainer_config(diffusion_model=diffusion, dataset=dataset)
 
     if epoch == 'latest':
         epoch = get_latest_epoch(loadpath)
@@ -70,7 +70,7 @@ def load_diffusion(*loadpath, epoch='latest', device='cuda:0', seed=None):
 
     losses = load_losses(*loadpath, 'losses.pkl')
 
-    return DiffusionExperiment(dataset, model, trainer.ema_model, trainer, epoch, losses)
+    return DiffusionExperiment(dataset, trainer.model.model, trainer.model, trainer, epoch, losses)
 
 def check_compatibility(experiment_1, experiment_2):
     '''

@@ -11,8 +11,9 @@ args_to_watch = [
     ('prefix', ''),
     ('horizon', 'H'),
     ('n_diffusion_steps', 'T'),
+    ('use_actions', 'A'),
     ## value kwargs
-    # ('discount', 'd'),
+    ('discount', 'd'),
 ]
 
 logbase = 'logs'
@@ -20,20 +21,14 @@ logbase = 'logs'
 base = {
     'diffusion': {
         ## model
-        'model': 'models.UNet1DTemporalCondModel',
-        'diffusion': 'models.GaussianDiffusion',
+        'model': 'models.UNet1DTemporalModel',
         'horizon': 16,
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
-        'loss_discount': 1.0,
-        'returns_condition': True,
-        'action_weight': 10,            
-        'dim': 32,
+        'action_weight': 10,            # To include 
         'dim_mults': (1, 2, 4, 8),
         'attention': False,
-        'condition_dropout': 0.25,
-        'condition_guidance_w': 1.2,
-        'test_ret': 0.9,        
+        # 'renderer': 'utils.MuJoCoRenderer',
 
         ## dataset
         'loader': 'datasets.SequenceDataset',
@@ -42,9 +37,6 @@ base = {
         'clip_denoised': False,
         'use_padding': False,
         'max_path_length': 100,
-        'include_returns': True,
-        'returns_scale': 400,   # Determined using rewards from the dataset
-        'discount': 0.99,
 
         ## serialization
         'logbase': logbase,

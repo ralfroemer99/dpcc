@@ -140,7 +140,7 @@ def cosine_beta_schedule(timesteps, s=0.008, dtype=torch.float32):
     betas_clipped = np.clip(betas, a_min=0, a_max=0.999)
     return torch.tensor(betas_clipped, dtype=dtype)
 
-def apply_conditioning(x, conditions, action_dim, goal_dim=0):
+def apply_conditioning(x, conditions, action_dim, goal_dim=0, noise=False):
     '''
         x : tensor
             [ batch_size x horizon x (action_dim + obs_dim + goal_dim) ]
@@ -150,16 +150,18 @@ def apply_conditioning(x, conditions, action_dim, goal_dim=0):
             dimension of the action space
         goal_dim : int
             dimension of the goal space
+        noise : bool
+            Indicates if conditioning has to be applied to the added noise (i.e., set entries to zero)
     '''
     
     for t, val in conditions.items():
         if isinstance(t, str):     # unsafe sets
             continue
         else:
-            x[:, t, action_dim:] = val.clone()
+            x[:, t, action_dim:] = val.clone() if not noise else 0
     
     if goal_dim > 0:
-        x[:, :, -goal_dim:] = conditions[0][:, -goal_dim:].unsqueeze(1).clone()
+        x[:, :, -goal_dim:] = conditions[0][:, -goal_dim:].unsqueeze(1).clone() if not noise else 0
 
     return x
 
@@ -181,8 +183,9 @@ class WeightedLoss(nn.Module):
         '''
         loss = self._loss(pred, targ)
         weighted_loss = (loss * self.weights).mean()
+        # a0_loss = (loss[:, 0, :self.action_dim] / self.weights[0, :self.action_dim]).mean()
         a0_loss = (loss[:, 0, :self.action_dim] / self.weights[0, :self.action_dim]).mean()
-        return weighted_loss, a0_loss
+        return weighted_loss, {'a0_loss': a0_loss}
 
 class ValueLoss(nn.Module):
     def __init__(self, *args):

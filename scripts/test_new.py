@@ -4,10 +4,13 @@ import numpy as np
 import diffuser.utils as utils
 import matplotlib.pyplot as plt
 from diffuser.sampling import Policy
-from diffusers.schedulers.scheduling_ddim import DDIMScheduler
-from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+# from diffusers.schedulers.scheduling_ddim import DDIMScheduler
+# from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+from diffusers import DDPMScheduler
 
-exp = 'pointmaze-umaze-dense-v2'
+minari.list_local_datasets()
+
+exp = 'pointmaze-medium-dense-v2'
 
 class Parser(utils.Parser):
     dataset: str = exp
@@ -22,20 +25,19 @@ diffusion_experiment = utils.load_diffusion(
 )
 
 diffusion_losses = diffusion_experiment.losses
-diffusion = diffusion_experiment.ema
+diffusion = diffusion_experiment.diffusion
 dataset = diffusion_experiment.dataset
 trainer = diffusion_experiment.trainer
 
-model = diffusion
-
 # Create scheduler
-scheduler = DDPMScheduler(num_train_timesteps=trainer.noise_scheduler.config.num_train_timesteps)   
+scheduler = DDPMScheduler(num_train_timesteps=diffusion.n_timesteps)   
+# scheduler = DDPMScheduler.from_pretrained("google/ddpm-cat-256")
 # scheduler = DDIMScheduler(num_train_timesteps=trainer.noise_scheduler.config.num_train_timesteps)
 scheduler.set_timesteps(20)                         # Steps used for inference
 
 # Create policy
 policy = Policy(
-    model=model,
+    model=diffusion,
     scheduler=scheduler,
     normalizer=dataset.normalizer,
     preprocess_fns=args.preprocess_fns,
@@ -51,15 +53,16 @@ dataset = minari.load_dataset(exp, download=True)
 env = dataset.recover_environment(render_mode='human', eval_env=True)
 
 # Run policy
-n_trials = 10
-n_timesteps = 200
+n_trials = 1
+n_timesteps = 500
 fig, ax = plt.subplots(n_trials, 8)
 
-action_update_every = 10
+action_update_every = 1
+save_samples_every = 10
 
 positions = []
 
-sampled_trajectories = np.zeros((n_trials, n_timesteps // action_update_every, args.batch_size, args.horizon, 2))
+sampled_trajectories = np.zeros((n_trials, n_timesteps // save_samples_every, args.batch_size, args.horizon, 2))
 
 n_success = 0
 for i in range(n_trials):
@@ -75,10 +78,11 @@ for i in range(n_trials):
         start = time.time()
         if _ % action_update_every == 0:
             action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon)
-            sampled_trajectories[i, traj_idx] = samples.observations[:, :, :2]
             prev_action = action
             update_counter = 1
-            traj_idx += 1
+            if _ % save_samples_every == 0:
+                sampled_trajectories[i, traj_idx] = samples.observations[:, :, :2]
+                traj_idx += 1
         else:
             action = prev_action
             update_counter += 1
@@ -109,8 +113,8 @@ for i in range(n_trials):
 print(f'Success rate: {n_success / n_trials}')
 plt.show()
 
-fig, ax = plt.subplots(n_trials)
-for _ in range(n_trials):
+fig, ax = plt.subplots(1, min(n_trials, 5), figsize=(20, 5))
+for _ in range(min(n_trials, 5)):
     for __ in range(sampled_trajectories.shape[1]):
         for ___ in range(3):
             ax[_].plot(sampled_trajectories[_, __, ___, :, 0], sampled_trajectories[_, __, ___, :, 1], 'b')
