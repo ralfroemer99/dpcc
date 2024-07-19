@@ -17,7 +17,7 @@ class SequenceDataset(torch.utils.data.Dataset):
 
     def __init__(self, env='hopper-medium-replay', horizon=64, normalizer='LimitsNormalizer', 
                  preprocess_fns=[], max_path_length=100, max_n_episodes=100000, 
-                 termination_penalty=0, use_padding=False, discount=0.99, returns_scale=1000, include_returns=False):
+                 termination_penalty=0, use_padding=False, discount=0.99, returns_scale=100, include_returns=False):
         self.preprocess_fn = get_preprocess_fn(preprocess_fns, env)
         self.horizon = horizon
         self.max_path_length = max_path_length
@@ -108,9 +108,10 @@ class SequenceDataset(torch.utils.data.Dataset):
 
         if self.include_returns:
             rewards = self.fields.rewards[path_ind, start:]
+            # rewards = self.fields.rewards[path_ind, start:end]
             discounts = self.discounts[:len(rewards)]
             returns = (discounts * rewards).sum()
-            returns = np.array([returns/self.returns_scale], dtype=np.float32)
+            returns = np.array([returns/self.returns_scale], dtype=np.float32)      # Maybe better self.returns_scale = self.discounts.sum()?
             batch = RewardBatch(trajectories, conditions, returns)
             # batch = Batch(trajectories, conditions)
         else:

@@ -1,8 +1,8 @@
+import time
 import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
-import pdb
 
 import diffuser.utils as utils
 from .helpers import (
@@ -433,7 +433,7 @@ class GaussianInvDynDiffusion(nn.Module):
         return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False):
+    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False, projector=None, constraints=None):
         device = self.betas.device
 
         batch_size = shape[0]
@@ -447,6 +447,13 @@ class GaussianInvDynDiffusion(nn.Module):
             timesteps = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(x, cond, timesteps, returns)
             x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
+
+            # Project trajectory
+            if i <= self.n_timesteps * 0.8 and projector is not None:
+                start_time = time.time()
+                x = projector(x, constraints)
+                elapsed_time = time.time() - start_time
+                print(f'Projection time: {elapsed_time}')
 
             # progress.update({'t': i})
 

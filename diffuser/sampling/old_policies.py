@@ -7,29 +7,40 @@ import pdb
 
 import diffuser.utils as utils
 from diffuser.datasets.preprocessing import get_policy_preprocess_fn
+from diffuser.models.helpers import apply_conditioning
 
 
-Trajectories = namedtuple('Trajectories', 'actions observations values')
+Trajectories = namedtuple('Trajectories', 'actions observations')
 
 
-class GuidedPolicy:
+class Policy:
 
-    def __init__(self, guide, diffusion_model, normalizer, preprocess_fns, **sample_kwargs):
-        self.guide = guide
-        self.diffusion_model = diffusion_model
+    def __init__(self, model, scheduler, normalizer, preprocess_fns, **sample_kwargs):
+        self.model = model
+        self.scheduler = scheduler
         self.normalizer = normalizer
-        self.action_dim = diffusion_model.action_dim
+        self.action_dim = model.action_dim
         self.preprocess_fn = get_policy_preprocess_fn(preprocess_fns)
         self.sample_kwargs = sample_kwargs
-        self.previous_trajectories = None
 
-    def __call__(self, conditions, batch_size=1, unsafe_bounds_box=None, unsafe_bounds_circle=None, warm_start_steps=None, verbose=True, id_model=None):
+    def __call__(self, conditions, batch_size=1, horizon=16, id_model=None):
         conditions = {k: self.preprocess_fn(v) for k, v in conditions.items()}
         conditions = self._format_conditions(conditions, batch_size)
 
         ## run reverse diffusion process
-        samples = self.diffusion_model(conditions, guide=self.guide, verbose=verbose, **self.sample_kwargs)
-        trajectories = utils.to_np(samples.trajectories)
+        sample_size = (batch_size, horizon, self.model.observation_dim + self.model.action_dim)
+        noise = torch.randn(sample_size, device=self.device)
+        sample = noise
+        for t in self.scheduler.timesteps:
+            sample = apply_conditioning(sample, conditions, self.action_dim, self.model.goal_dim)
+            with torch.no_grad():
+                noisy_residual = self.model(sample=sample, timestep=t, condition=conditions)
+            previous_noisy_sample = self.scheduler.step(noisy_residual, t, sample).prev_sample
+            sample = previous_noisy_sample
+
+        sample = apply_conditioning(sample, conditions, self.action_dim, self.model.goal_dim)
+
+        trajectories = utils.to_np(sample)
 
         ## extract observations [ batch_size x horizon x observation_dim ]
         normed_observations = trajectories[:, :, self.action_dim:]
@@ -53,15 +64,15 @@ class GuidedPolicy:
             else:
                 action = None
 
-        trajectories = Trajectories(actions, observations, samples.values)
+        trajectories = Trajectories(actions, observations)
 
-        self.previous_trajectories = samples.trajectories
+        # self.previous_trajectories = samples.trajectories
 
         return action, trajectories
 
     @property
     def device(self):
-        parameters = list(self.diffusion_model.parameters())
+        parameters = list(self.model.parameters())
         return parameters[0].device
 
     def _format_conditions(self, conditions, batch_size):

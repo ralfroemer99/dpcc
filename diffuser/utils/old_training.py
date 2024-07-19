@@ -1,13 +1,12 @@
-import os
+import os, pickle
 import copy
-import numpy as np
 import torch
-import einops
-import pickle
-import pdb
+import numpy as np
+from .arrays import batch_to_device
+from diffuser.models.helpers import apply_conditioning, Losses, get_loss_weights
+from tqdm.auto import tqdm
+from diffusers.optimization import get_cosine_schedule_with_warmup
 
-from .arrays import batch_to_device, to_np, to_device, apply_dict
-from .timer import Timer
 
 def cycle(dl):
     while True:
@@ -35,51 +34,56 @@ class EMA():
 class Trainer(object):
     def __init__(
         self,
-        diffusion_model,
+        model,
+        noise_scheduler,
         dataset,
-        # renderer,
+        train_test_split=1.0,
+        loss_type='l2',
+        action_weight=1.0,
         ema_decay=0.995,
+        n_train_steps=1e5,
+        n_steps_per_epoch=1000,
         train_batch_size=32,
         train_lr=2e-5,
+        lr_warmup_steps=1000,
         gradient_accumulate_every=2,
         step_start_ema=2000,
         update_ema_every=10,
-        train_test_split=1.0,
         log_freq=1000,
-        sample_freq=1000,
-        save_freq=1000,
-        label_freq=100000,
-        save_parallel=False,
         results_folder='./results',
-        n_reference=8,
     ):
         super().__init__()
-        self.model = diffusion_model
+        self.model = model
         self.ema = EMA(ema_decay)
         self.ema_model = copy.deepcopy(self.model)
         self.update_ema_every = update_ema_every
-
         self.step_start_ema = step_start_ema
         self.log_freq = log_freq
-        self.sample_freq = sample_freq
-        self.save_freq = save_freq
-        self.label_freq = label_freq
-        self.save_parallel = save_parallel
+        self.save_freq = n_train_steps // 5
 
+        loss_weights = get_loss_weights(action_weight, self.model.observation_dim + self.model.action_dim, 
+                                        self.model.action_dim, self.model.horizon).to(self.model.device)
+        self.loss_fn = Losses[loss_type](loss_weights, self.model.action_dim)
+
+        self.noise_scheduler = noise_scheduler  
+
+        self.n_train_steps = n_train_steps
+        self.n_steps_per_epoch = n_steps_per_epoch
         self.batch_size = train_batch_size
         self.gradient_accumulate_every = gradient_accumulate_every
 
         self.dataset = dataset
+        self.include_returns = dataset.include_returns
         self.train_test_split = train_test_split
         if train_test_split == 1:
-            self.dataloader = cycle(torch.utils.data.DataLoader(
+            self.train_dataloader = cycle(torch.utils.data.DataLoader(
                 self.dataset, batch_size=train_batch_size, num_workers=1, shuffle=True, pin_memory=True
             ))
         else:
             n_train = int(train_test_split * len(self.dataset))
             n_test = len(self.dataset) - n_train
             train_dataset, test_dataset = torch.utils.data.random_split(self.dataset, [n_train, n_test])
-            self.dataloader = cycle(torch.utils.data.DataLoader(
+            self.train_dataloader = cycle(torch.utils.data.DataLoader(
                 train_dataset, batch_size=train_batch_size, num_workers=1, shuffle=True, pin_memory=True
             ))
             self.test_dataloader = cycle(torch.utils.data.DataLoader(
@@ -88,17 +92,17 @@ class Trainer(object):
             self.best_test_loss = np.inf
         self.train_losses = []
         self.test_losses = []
+        self.train_a0_losses = []
+        self.test_a0_losses = []
 
-        self.dataloader_vis = cycle(torch.utils.data.DataLoader(
-            self.dataset, batch_size=1, num_workers=0, shuffle=True, pin_memory=True
-        ))
-
-        # self.renderer = renderer
-
-        self.optimizer = torch.optim.Adam(diffusion_model.parameters(), lr=train_lr)
+        self.optimizer = torch.optim.Adam(model.parameters(), lr=train_lr)
+        self.lr_scheduler = get_cosine_schedule_with_warmup(
+            optimizer=self.optimizer,
+            num_warmup_steps=lr_warmup_steps,
+            num_training_steps=self.n_train_steps,
+        )
 
         self.logdir = results_folder
-        self.n_reference = n_reference
 
         self.reset_parameters()
         self.step = 0
@@ -111,79 +115,109 @@ class Trainer(object):
             self.reset_parameters()
             return
         self.ema.update_model_average(self.ema_model, self.model)
+        
+    def train_epoch(self, n_train_steps, epoch=0):        
+        progress_bar = tqdm(total=n_train_steps)
+        progress_bar.set_description(f"Epoch {epoch}")
 
-    #-----------------------------------------------------------------------------#
-    #------------------------------------ api ------------------------------------#
-    #-----------------------------------------------------------------------------#
-
-    def train(self, n_train_steps):
-
-        timer = Timer()
         for step in range(n_train_steps):
-            for i in range(self.gradient_accumulate_every):
-                batch = next(self.dataloader)
-                batch = batch_to_device(batch)
+            for _ in range(self.gradient_accumulate_every):
+                batch = next(self.train_dataloader)
+                sample, cond = batch_to_device(batch, self.model.device)                    # Sample clean trajectory  
 
-                loss, infos = self.model.loss(*batch)
-                loss = loss / self.gradient_accumulate_every
+                noise = torch.randn(sample.shape, device=sample.device)
+                noise = apply_conditioning(noise, cond, self.model.action_dim, self.model.goal_dim, noise=True) if cond is not None else noise  # Apply conditioning (set to zero)
+                
+                timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (len(sample),), device=sample.device, dtype=torch.int64)
+                x_noisy = self.noise_scheduler.add_noise(sample, noise, timesteps)          # Add noise to the trajectory
+                x_noisy = apply_conditioning(x_noisy, cond, self.model.action_dim, self.model.goal_dim) if cond is not None else x_noisy        # Apply conditioning
+
+                noise_pred = self.model(sample=x_noisy, timestep=timesteps, condition=cond)
+
+                loss, a0_loss = self.loss_fn(noise_pred, noise)
+
+                loss /= self.gradient_accumulate_every
                 loss.backward()
 
             self.optimizer.step()
+            self.lr_scheduler.step()
             self.optimizer.zero_grad()
 
             if self.step % self.update_ema_every == 0:
                 self.step_ema()
 
             if self.step % self.save_freq == 0:
-                label = self.step // self.label_freq * self.label_freq
+                label = self.step
                 self.save(label)
 
             if self.step % self.log_freq == 0:
-                infos_str = ' | '.join([f'{key}: {val:8.4f}' for key, val in infos.items()])
-                # print(f'{self.step}: {loss:8.4f} | {infos_str} | t: {timer():8.4f}', flush=True)
-                print(f'{self.step}: {100 * loss:8.4f} | {infos_str}', flush=True)
-                self.train_losses.append([self.step, loss])
+                self.train_losses.append([self.step, loss.item()])
+                self.train_a0_losses.append([self.step, a0_loss.item()])
 
                 if self.train_test_split < 1:
-                    test_loss = self.test()
+                    test_loss, test_a0_loss = self.test()
                     self.test_losses.append([self.step, test_loss])
+                    self.test_a0_losses.append([self.step, test_a0_loss])
                     if test_loss < self.best_test_loss:
                         self.best_test_loss = test_loss
-                        self.save_best() 
-
+                        self.save_best()
+                    if self.step == 0:
+                        if self.model.action_dim > 0:
+                            print(f'Initial test loss: {test_loss:8.4f}, a0 loss: {test_a0_loss:8.4f}')
+                        else:
+                            print(f'Initial test loss: {test_loss:8.4f}')
                 self.save_losses()
+            
+            if self.train_test_split < 1:
+                if self.model.action_dim > 0:
+                    logs = {"loss": loss.item(), "a0_loss": a0_loss.item(), "loss_test": test_loss, "a0_loss_test": test_a0_loss, "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
+                else:
+                    logs = {"loss": loss.item(), "loss_test": test_loss, "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
+            else:
+                if self.model.action_dim > 0:
+                    logs = {"loss": loss.item(), "a0_loss": a0_loss.item(), "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
+                else:
+                    logs = {"loss": loss.item(), "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
 
-            # if self.step == 0 and self.sample_freq:
-            #     self.render_reference(self.n_reference)
+            progress_bar.update(1)
+            progress_bar.set_postfix(**logs)
 
-            # if self.sample_freq and self.step % self.sample_freq == 0:
-            #     self.render_samples()
+            self.step += 1
 
-            self.step += 1               
+    def train(self):
+        n_epochs = int(self.n_train_steps // self.n_steps_per_epoch)
+        for epoch in range(n_epochs):
+            self.train_epoch(self.n_steps_per_epoch, epoch)
 
-    def test(self, n_training_samples=1000):
+    def test(self, n_test=100):
         self.model.eval()   # Set the model to evaluation mode
 
         test_loss = 0
+        test_a0_loss = 0
         with torch.no_grad():
-            for i in range(int(n_training_samples / self.batch_size)):
-                loss_t = 0
-                for j in range(self.gradient_accumulate_every):
-                    batch = next(self.test_dataloader)
-                    batch = batch_to_device(batch)
-                    
-                    loss, infos = self.model.loss(*batch)
-                    loss /= self.gradient_accumulate_every
-                    loss_t += loss
-               
-                test_loss += loss_t.item()
+            for step in range(n_test):
+                batch = next(self.test_dataloader)
+                sample, cond = batch_to_device(batch, self.model.device)
 
-            test_loss /= int(n_training_samples / self.batch_size)
+                noise = torch.randn(sample.shape, device=sample.device)                         # Sample clean trajectory
+                noise = apply_conditioning(noise, cond, self.model.action_dim, self.model.goal_dim, noise=True) if cond is not None else noise  # Apply conditioning (set to zero)
 
-        infos_str = ' | '.join([f'{key}: {val:8.4f}' for key, val in infos.items()])
-        print(f'Test: {100 * test_loss:8.4f} | {infos_str}', flush=True)
+                timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (len(sample),), device=sample.device, dtype=torch.int64)
+                x_noisy = self.noise_scheduler.add_noise(sample, noise, timesteps)              # Add noise to the trajectory
+                x_noisy = apply_conditioning(x_noisy, cond, self.model.action_dim, self.model.goal_dim) if cond is not None else x_noisy        # Apply conditioning
+                
+                noise_pred = self.model(sample=x_noisy, timestep=timesteps, condition=cond)
 
-        return test_loss
+                loss, a0_loss = self.loss_fn(noise_pred, noise)
+                loss /= self.gradient_accumulate_every
+            
+                test_loss += loss.item()
+                test_a0_loss += a0_loss.item() if self.model.action_dim > 0 else 0
+
+            test_loss /= n_test
+            test_a0_loss /= n_test
+
+        return test_loss, test_a0_loss
 
     def save(self, epoch):
         '''
@@ -197,7 +231,7 @@ class Trainer(object):
         }
         savepath = os.path.join(self.logdir, f'state_{epoch}.pt')
         torch.save(data, savepath)
-        print(f'Saved model to {savepath}', flush=True)
+        # print(f'Saved model to {savepath}', flush=True)
 
     def save_best(self):
         '''
@@ -211,18 +245,19 @@ class Trainer(object):
         }
         savepath = os.path.join(self.logdir, f'state_best.pt')
         torch.save(data, savepath)
-        print(f'Saved best model to {savepath}', flush=True)
+        # print(f'Saved best model to {savepath}', flush=True)
 
     def save_losses(self):
         data = {
             'training_losses': self.train_losses,
             'test_losses': self.test_losses,
+            'training_a0_losses': self.train_a0_losses,
+            'test_a0_losses': self.test_a0_losses,
         }
         savepath = os.path.join(self.logdir, 'losses.pkl')
 
         with open(savepath, 'wb') as f:
             pickle.dump(data, f)
-    
 
     def load(self, epoch):
         '''
@@ -234,69 +269,3 @@ class Trainer(object):
         self.step = data['step']
         self.model.load_state_dict(data['model'])
         self.ema_model.load_state_dict(data['ema'])
-
-    #-----------------------------------------------------------------------------#
-    #--------------------------------- rendering ---------------------------------#
-    #-----------------------------------------------------------------------------#
-
-    def render_reference(self, batch_size=10):
-        '''
-            renders training points
-        '''
-
-        ## get a temporary dataloader to load a single batch
-        dataloader_tmp = cycle(torch.utils.data.DataLoader(
-            self.dataset, batch_size=batch_size, num_workers=0, shuffle=True, pin_memory=True
-        ))
-        batch = dataloader_tmp.__next__()
-        dataloader_tmp.close()
-
-        ## get trajectories and condition at t=0 from batch
-        trajectories = to_np(batch.trajectories)
-        conditions = to_np(batch.conditions[0])[:,None]
-
-        ## [ batch_size x horizon x observation_dim ]
-        normed_observations = trajectories[:, :, self.dataset.action_dim:]
-        observations = self.dataset.normalizer.unnormalize(normed_observations, 'observations')
-
-        savepath = os.path.join(self.logdir, f'_sample-reference.png')
-        self.renderer.composite(savepath, observations)
-
-    def render_samples(self, batch_size=2, n_samples=2):
-        '''
-            renders samples from (ema) diffusion model
-        '''
-        for i in range(batch_size):
-
-            ## get a single datapoint
-            batch = self.dataloader_vis.__next__()
-            conditions = to_device(batch.conditions, 'cuda:0')
-
-            ## repeat each item in conditions `n_samples` times
-            conditions = apply_dict(
-                einops.repeat,
-                conditions,
-                'b d -> (repeat b) d', repeat=n_samples,
-            )
-
-            ## [ n_samples x horizon x (action_dim + observation_dim) ]
-            samples = self.ema_model(conditions)
-            trajectories = to_np(samples.trajectories)
-
-            ## [ n_samples x horizon x observation_dim ]
-            normed_observations = trajectories[:, :, self.dataset.action_dim:]
-
-            # [ 1 x 1 x observation_dim ]
-            normed_conditions = to_np(batch.conditions[0])[:,None]
-
-            ## [ n_samples x (horizon + 1) x observation_dim ]
-            normed_observations = np.concatenate([
-                np.repeat(normed_conditions, n_samples, axis=0),
-                normed_observations
-            ], axis=1)
-
-            ## [ n_samples x (horizon + 1) x observation_dim ]
-            observations = self.dataset.normalizer.unnormalize(normed_observations, 'observations')
-
-            savepath = os.path.join(self.logdir, f'sample-{self.step}-{i}.png')
-            self.renderer.composite(savepath, observations)

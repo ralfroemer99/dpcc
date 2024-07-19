@@ -1,12 +1,11 @@
 import os, pickle
 import copy
-import torch
 import numpy as np
-from .arrays import batch_to_device
-from diffuser.models.helpers import apply_conditioning, Losses, get_loss_weights
+import torch
 from tqdm.auto import tqdm
 from diffusers.optimization import get_cosine_schedule_with_warmup
 
+from .arrays import batch_to_device
 
 def cycle(dl):
     while True:
@@ -34,38 +33,31 @@ class EMA():
 class Trainer(object):
     def __init__(
         self,
-        model,
-        noise_scheduler,
+        diffusion_model,
         dataset,
         train_test_split=1.0,
-        loss_type='l2',
-        action_weight=1.0,
         ema_decay=0.995,
-        n_train_steps=1e5,
-        n_steps_per_epoch=1000,
         train_batch_size=32,
         train_lr=2e-5,
         lr_warmup_steps=1000,
+        n_train_steps=1e5,
+        n_steps_per_epoch=1000,
         gradient_accumulate_every=2,
         step_start_ema=2000,
         update_ema_every=10,
         log_freq=1000,
+        train_device='cuda',
         results_folder='./results',
     ):
         super().__init__()
-        self.model = model
+        self.model = diffusion_model
         self.ema = EMA(ema_decay)
         self.ema_model = copy.deepcopy(self.model)
         self.update_ema_every = update_ema_every
+
         self.step_start_ema = step_start_ema
         self.log_freq = log_freq
         self.save_freq = n_train_steps // 5
-
-        loss_weights = get_loss_weights(action_weight, self.model.observation_dim + self.model.action_dim, 
-                                        self.model.action_dim, self.model.horizon).to(self.model.device)
-        self.loss_fn = Losses[loss_type](loss_weights, self.model.action_dim)
-
-        self.noise_scheduler = noise_scheduler  
 
         self.n_train_steps = n_train_steps
         self.n_steps_per_epoch = n_steps_per_epoch
@@ -73,7 +65,6 @@ class Trainer(object):
         self.gradient_accumulate_every = gradient_accumulate_every
 
         self.dataset = dataset
-        self.include_returns = dataset.include_returns
         self.train_test_split = train_test_split
         if train_test_split == 1:
             self.train_dataloader = cycle(torch.utils.data.DataLoader(
@@ -95,7 +86,7 @@ class Trainer(object):
         self.train_a0_losses = []
         self.test_a0_losses = []
 
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=train_lr)
+        self.optimizer = torch.optim.Adam(diffusion_model.parameters(), lr=train_lr)
         self.lr_scheduler = get_cosine_schedule_with_warmup(
             optimizer=self.optimizer,
             num_warmup_steps=lr_warmup_steps,
@@ -107,6 +98,8 @@ class Trainer(object):
         self.reset_parameters()
         self.step = 0
 
+        self.device = train_device
+
     def reset_parameters(self):
         self.ema_model.load_state_dict(self.model.state_dict())
 
@@ -115,7 +108,11 @@ class Trainer(object):
             self.reset_parameters()
             return
         self.ema.update_model_average(self.ema_model, self.model)
-        
+
+    #-----------------------------------------------------------------------------#
+    #------------------------------------ api ------------------------------------#
+    #-----------------------------------------------------------------------------#
+
     def train_epoch(self, n_train_steps, epoch=0):        
         progress_bar = tqdm(total=n_train_steps)
         progress_bar.set_description(f"Epoch {epoch}")
@@ -123,20 +120,9 @@ class Trainer(object):
         for step in range(n_train_steps):
             for _ in range(self.gradient_accumulate_every):
                 batch = next(self.train_dataloader)
-                sample, cond = batch_to_device(batch, self.model.device)                    # Sample clean trajectory  
-
-                noise = torch.randn(sample.shape, device=sample.device)
-                noise = apply_conditioning(noise, cond, self.model.action_dim, self.model.goal_dim, noise=True) if cond is not None else noise  # Apply conditioning (set to zero)
-                
-                timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (len(sample),), device=sample.device, dtype=torch.int64)
-                x_noisy = self.noise_scheduler.add_noise(sample, noise, timesteps)          # Add noise to the trajectory
-                x_noisy = apply_conditioning(x_noisy, cond, self.model.action_dim, self.model.goal_dim) if cond is not None else x_noisy        # Apply conditioning
-
-                noise_pred = self.model(sample=x_noisy, timestep=timesteps, condition=cond)
-
-                loss, a0_loss = self.loss_fn(noise_pred, noise)
-
-                loss /= self.gradient_accumulate_every
+                batch = batch_to_device(batch, device=self.device)
+                loss, infos = self.model.loss(*batch)
+                loss = loss / self.gradient_accumulate_every
                 loss.backward()
 
             self.optimizer.step()
@@ -152,7 +138,8 @@ class Trainer(object):
 
             if self.step % self.log_freq == 0:
                 self.train_losses.append([self.step, loss.item()])
-                self.train_a0_losses.append([self.step, a0_loss.item()])
+                if 'a0_loss' in infos:
+                    self.train_a0_losses.append([self.step, infos['a0_loss'].item()])
 
                 if self.train_test_split < 1:
                     test_loss, test_a0_loss = self.test()
@@ -169,13 +156,13 @@ class Trainer(object):
                 self.save_losses()
             
             if self.train_test_split < 1:
-                if self.model.action_dim > 0:
-                    logs = {"loss": loss.item(), "a0_loss": a0_loss.item(), "loss_test": test_loss, "a0_loss_test": test_a0_loss, "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
+                if 'a0_loss' in infos:
+                    logs = {"loss": loss.item(), "a0_loss": infos['a0_loss'].item(), "loss_test": test_loss, "a0_loss_test": test_a0_loss, "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
                 else:
                     logs = {"loss": loss.item(), "loss_test": test_loss, "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
             else:
-                if self.model.action_dim > 0:
-                    logs = {"loss": loss.item(), "a0_loss": a0_loss.item(), "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
+                if 'a0_loss' in infos:
+                    logs = {"loss": loss.item(), "a0_loss": infos['a0_loss'].item(), "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
                 else:
                     logs = {"loss": loss.item(), "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
 
@@ -197,22 +184,12 @@ class Trainer(object):
         with torch.no_grad():
             for step in range(n_test):
                 batch = next(self.test_dataloader)
-                sample, cond = batch_to_device(batch, self.model.device)
-
-                noise = torch.randn(sample.shape, device=sample.device)                         # Sample clean trajectory
-                noise = apply_conditioning(noise, cond, self.model.action_dim, self.model.goal_dim, noise=True) if cond is not None else noise  # Apply conditioning (set to zero)
-
-                timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (len(sample),), device=sample.device, dtype=torch.int64)
-                x_noisy = self.noise_scheduler.add_noise(sample, noise, timesteps)              # Add noise to the trajectory
-                x_noisy = apply_conditioning(x_noisy, cond, self.model.action_dim, self.model.goal_dim) if cond is not None else x_noisy        # Apply conditioning
-                
-                noise_pred = self.model(sample=x_noisy, timestep=timesteps, condition=cond)
-
-                loss, a0_loss = self.loss_fn(noise_pred, noise)
+                batch = batch_to_device(batch, device=self.device)
+                loss, infos = self.model.loss(*batch)
                 loss /= self.gradient_accumulate_every
             
                 test_loss += loss.item()
-                test_a0_loss += a0_loss.item() if self.model.action_dim > 0 else 0
+                test_a0_loss += infos['a0_loss'].item() if 'a0_loss' in infos else 0
 
             test_loss /= n_test
             test_a0_loss /= n_test

@@ -21,8 +21,8 @@ base = {
     'diffusion': {
         ## model
         'model': 'models.UNet1DTemporalCondModel',
-        'diffusion': 'models.GaussianDiffusion',
-        'horizon': 16,
+        'diffusion': 'models.GaussianInvDynDiffusion',
+        'horizon': 8,
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
         'loss_discount': 1.0,
@@ -53,9 +53,9 @@ base = {
 
         ## training
         'n_steps_per_epoch': 1000,  # 10000
-        'n_train_steps': 1e6,       # 1e6
+        'n_train_steps': 5e5,       # 1e6
         'batch_size': 32,            # 32
-        'learning_rate': 2e-5,      # 2e-4
+        'learning_rate': 1e-4,      # 2e-4
         'gradient_accumulate_every': 2,
         'ema_decay': 0.995,
         'train_test_split': 0.9,
@@ -70,6 +70,7 @@ base = {
         'preprocess_fns': [],
         'device': 'cuda',
         'seed': 0,
+        'test_ret': 0,
 
         ## serialization
         'loadbase': None,
@@ -78,14 +79,14 @@ base = {
         'exp_name': watch(args_to_watch),
 
         ## diffusion model
-        'horizon': 16,
+        'horizon': 8,
         'n_diffusion_steps': 20,
 
         ## loading
         'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}',
         'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}',
 
-        'diffusion_epoch': 'best',      # 'latest'
+        'diffusion_epoch': 'latest',      # 'latest'
 
         'verbose': False,
         'suffix': '0',

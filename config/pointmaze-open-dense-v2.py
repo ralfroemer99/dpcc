@@ -22,7 +22,7 @@ base = {
         ## model
         'model': 'models.UNet1DTemporalCondModel',
         'diffusion': 'models.GaussianInvDynDiffusion',
-        'horizon': 16,
+        'horizon': 8,
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
         'loss_discount': 1.0,
@@ -43,7 +43,7 @@ base = {
         'use_padding': False,
         'max_path_length': 100,
         'include_returns': True,
-        'returns_scale': 400,   # Determined using rewards from the dataset
+        'returns_scale': 400,   # Determined using rewards from the dataset, not used in the code
         'discount': 0.99,
 
         ## serialization
@@ -79,7 +79,7 @@ base = {
         'exp_name': watch(args_to_watch),
 
         ## diffusion model
-        'horizon': 16,
+        'horizon': 8,    # 8
         'n_diffusion_steps': 20,
 
         ## loading
