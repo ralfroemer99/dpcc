@@ -406,8 +406,9 @@ class GaussianInvDynDiffusion(nn.Module):
         if self.returns_condition:
             # epsilon could be epsilon or x0 itself
             epsilon_cond = self.model(x, cond, t, returns, use_dropout=False)
-            epsilon_uncond = self.model(x, cond, t, returns, force_dropout=True)
-            epsilon = epsilon_uncond + self.condition_guidance_w*(epsilon_cond - epsilon_uncond)
+            # epsilon_uncond = self.model(x, cond, t, returns, force_dropout=True)
+            # epsilon = epsilon_uncond + self.condition_guidance_w*(epsilon_cond - epsilon_uncond)
+            epsilon = epsilon_cond      # REMOVE
         else:
             epsilon = self.model(x, cond, t)
 
@@ -449,11 +450,17 @@ class GaussianInvDynDiffusion(nn.Module):
             x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
 
             # Project trajectory
-            if i <= self.n_timesteps * 0.8 and projector is not None:
-                start_time = time.time()
-                x = projector(x, constraints)
-                elapsed_time = time.time() - start_time
-                print(f'Projection time: {elapsed_time}')
+            if projector is not None:
+                if projector.only_last == False and i <= self.n_timesteps * 0.8:
+                    x = projector(x, constraints)
+                elif projector.only_last == True and i == 0:
+                    x = projector(x, constraints)
+
+            # if i <= self.n_timesteps * 0.8 and projector is not None and projector.only_last == False:
+                # start_time = time.time()
+                # x = projector(x, constraints)
+                # elapsed_time = time.time() - start_time
+                # print(f'Projection time: {elapsed_time}')
 
             # progress.update({'t': i})
 

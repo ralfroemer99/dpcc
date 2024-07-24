@@ -78,12 +78,12 @@ class ReplayBuffer:
             if key not in self._dict: self._allocate(key, array)
             self._dict[key][self._count, :path_length] = array[:path_length]
 
-        # penalize early termination
-        if path['terminals'].any() and not path['timeouts'].any() and self.termination_penalty is not None:
-            self._dict['rewards'][self._count, path_length - 1] += self.termination_penalty
+        # penalize early termination - Probably useful for antmaze when failed trajectories are included
+        # if path['terminals'].any() and not path['timeouts'].any() and self.termination_penalty is not None:
+        #     self._dict['rewards'][self._count, path_length - 1] += self.termination_penalty
         # if path['terminals'].any() and self.termination_penalty is not None:
         #     assert not path['timeouts'].any(), 'Penalized a timeout episode for early termination'
-        #     self._dict['rewards'][self._count, path_length - 1] += self.termination_penalty
+            # self._dict['rewards'][self._count, path_length - 1] += self.termination_penalty
 
         ## record path length
         self._dict['path_lengths'][self._count] = path_length

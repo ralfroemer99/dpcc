@@ -11,6 +11,7 @@ args_to_watch = [
     ('prefix', ''),
     ('horizon', 'H'),
     ('n_diffusion_steps', 'T'),
+    ('returns_condition', 'R'),
     ## value kwargs
     # ('discount', 'd'),
 ]
@@ -26,7 +27,7 @@ base = {
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
         'loss_discount': 1.0,
-        'returns_condition': True,
+        'returns_condition': False,
         'action_weight': 10,            
         'dim': 32,
         'dim_mults': (1, 2, 4, 8),
@@ -40,8 +41,8 @@ base = {
         'normalizer': 'LimitsNormalizer',
         'preprocess_fns': [],
         'clip_denoised': False,
-        'use_padding': False,
-        'max_path_length': 100,
+        'use_padding': True,
+        'max_path_length': 200,
         'include_returns': True,
         'returns_scale': 400,   # Determined using rewards from the dataset
         'discount': 0.99,
@@ -53,7 +54,7 @@ base = {
 
         ## training
         'n_steps_per_epoch': 1000,  # 10000
-        'n_train_steps': 5e5,       # 1e6
+        'n_train_steps': 1e5,       # 1e6
         'batch_size': 32,            # 32
         'learning_rate': 1e-4,      # 2e-4
         'gradient_accumulate_every': 2,
@@ -81,9 +82,11 @@ base = {
         ## diffusion model
         'horizon': 16,
         'n_diffusion_steps': 20,
+        'returns_condition': False,
+        'use_padding': True,
 
         ## loading
-        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}',
+        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}',
         'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}',
 
         'diffusion_epoch': 'latest',      # 'latest'

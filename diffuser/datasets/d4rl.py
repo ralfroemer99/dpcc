@@ -94,8 +94,15 @@ def sequence_dataset(env, preprocess_fn):
 
         for episode in episodes_generator:
             if type(episode.observations) == dict:      # Minari dataset
-                # observations = np.concatenate([episode.observations[key] for key in episode.observations], axis=1)
-                observations = np.concatenate((episode.observations['observation'], episode.observations['desired_goal']), axis=1)
+                if 'antmaze' in env:
+                    observations = np.concatenate((episode.observations['achieved_goal'], 
+                                                   episode.observations['observation'], 
+                                                   episode.observations['desired_goal']), 
+                                                   axis=1)
+                else:
+                    observations = np.concatenate((episode.observations['observation'],
+                                                   episode.observations['desired_goal']),
+                                                   axis=1)
                 goal_dim = episode.observations['desired_goal'].shape[1]
                 observations[0, -goal_dim:] = observations[1, -goal_dim:]      # Ensure that the goal is already set in the first timestep (from previous episode)
             else:
@@ -110,6 +117,17 @@ def sequence_dataset(env, preprocess_fn):
                 'rewards': episode.rewards,
                 'terminals': episode.terminations
             }
+
+            if 'antmaze' in env:
+                first_index = np.where(np.linalg.norm(episode.observations['achieved_goal'] - episode.observations['desired_goal'], axis=1) <= 0.5)[0]
+                if first_index.size == 0:
+                    continue        # No successful episode
+                else:
+                    first_index = first_index[0]
+                    episode_data['terminals'][first_index] = 1
+                    for data_key in episode_data:
+                        episode_data[data_key] = episode_data[data_key][:first_index+1]
+
             yield episode_data
     else:
         raise NotImplementedError

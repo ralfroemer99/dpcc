@@ -11,9 +11,9 @@ args_to_watch = [
     ('prefix', ''),
     ('horizon', 'H'),
     ('n_diffusion_steps', 'T'),
-    ('use_actions', 'A'),
+    ('returns_condition', 'R'),
     ## value kwargs
-    ('discount', 'd'),
+    # ('discount', 'd'),
 ]
 
 logbase = 'logs'
@@ -21,22 +21,32 @@ logbase = 'logs'
 base = {
     'diffusion': {
         ## model
-        'model': 'models.UNet1DTemporalModel',
-        'horizon': 16,
+        'model': 'models.UNet1DTemporalCondModel',
+        'diffusion': 'models.GaussianInvDynDiffusion',
+        'horizon': 8,
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
-        'action_weight': 10,            # To include 
+        'loss_discount': 1.0,
+        'returns_condition': False,
+        'action_weight': 10,            
+        'dim': 64,
         'dim_mults': (1, 2, 4, 8),
+        'hidden_dim': 512,
         'attention': False,
-        # 'renderer': 'utils.MuJoCoRenderer',
+        'condition_dropout': 0.25,
+        'condition_guidance_w': 1.2,
+        'test_ret': 0.9,        
 
         ## dataset
         'loader': 'datasets.SequenceDataset',
         'normalizer': 'LimitsNormalizer',
         'preprocess_fns': [],
         'clip_denoised': False,
-        'use_padding': False,
-        'max_path_length': 100,
+        'use_padding': True,
+        'max_path_length': 500,
+        'include_returns': True,
+        'returns_scale': 400,   # Determined using rewards from the dataset
+        'discount': 0.99,
 
         ## serialization
         'logbase': logbase,
@@ -45,7 +55,7 @@ base = {
 
         ## training
         'n_steps_per_epoch': 1000,  # 10000
-        'n_train_steps': 1e6,       # 1e6
+        'n_train_steps': 5e5,       # 1e6
         'batch_size': 32,            # 32
         'learning_rate': 2e-5,      # 2e-4
         'gradient_accumulate_every': 2,
@@ -62,6 +72,7 @@ base = {
         'preprocess_fns': [],
         'device': 'cuda',
         'seed': 0,
+        'test_ret': 0,
 
         ## serialization
         'loadbase': None,
@@ -70,14 +81,16 @@ base = {
         'exp_name': watch(args_to_watch),
 
         ## diffusion model
-        'horizon': 16,
+        'horizon': 8,
         'n_diffusion_steps': 20,
+        'returns_condition': False,
+        'use_padding': True,
 
         ## loading
-        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}',
+        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}',
         'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}',
 
-        'diffusion_epoch': 'best',      # 'latest'
+        'diffusion_epoch': 'latest',      # 'latest'
 
         'verbose': False,
         'suffix': '0',

@@ -2,10 +2,11 @@ import diffuser.utils as utils
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
 exps = [
-        'pointmaze-open-dense-v2',
-        'pointmaze-umaze-dense-v2',
+        'antmaze-umaze-v1',
+        # 'pointmaze-open-dense-v2',
+        # 'pointmaze-umaze-dense-v2',
         # 'pointmaze-medium-dense-v2',
-        # 'pointmaze-large-dense-v2'
+        # 'pointmaze-large-dense-v2',
         ]
 
 for exp in exps:
@@ -65,6 +66,7 @@ for exp in exps:
             n_timesteps=args.n_diffusion_steps,
             loss_type=args.loss_type,
             clip_denoised=args.clip_denoised,
+            hidden_dim=args.hidden_dim,
             ## loss weighting
             action_weight=args.action_weight,
             loss_discount=args.loss_discount,
@@ -124,4 +126,4 @@ for exp in exps:
     diffusion = diffusion_config(model)
     trainer = trainer_config(diffusion, dataset)
 
-    trainer.train()
+    # trainer.train()

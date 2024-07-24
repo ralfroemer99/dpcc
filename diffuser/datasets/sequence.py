@@ -47,6 +47,7 @@ class SequenceDataset(torch.utils.data.Dataset):
         self.n_episodes = fields.n_episodes
         self.path_lengths = fields.path_lengths
         self.get_goal_dim()
+        self.pad_goals()
         self.normalize()
 
         print(fields)
@@ -94,11 +95,21 @@ class SequenceDataset(torch.utils.data.Dataset):
 
         self.goal_dim = (self.fields.observations[idx, 0] == self.fields.observations[idx, 1]).sum()
 
+    def pad_goals(self):
+        '''
+            Pad goals to be the same in the padded interval as during the episode
+        '''
+        for i in range(self.n_episodes):
+            self.fields.observations[i, self.path_lengths[i]:, -self.goal_dim:] = self.fields.observations[i, self.path_lengths[i]-1, -self.goal_dim:]
+
     def __len__(self):
         return len(self.indices)
 
     def __getitem__(self, idx, eps=1e-4):
         path_ind, start, end = self.indices[idx]
+
+        # if self.fields.path_lengths[path_ind] < end:
+        #     print(f'Warning: path length {self.fields.path_lengths[path_ind]} is less than horizon {end}')
 
         observations = self.fields.normed_observations[path_ind, start:end]
         actions = self.fields.normed_actions[path_ind, start:end]
