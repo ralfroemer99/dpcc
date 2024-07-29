@@ -2,7 +2,6 @@ import time
 from copy import copy
 import minari
 import numpy as np
-import scipy as sp
 import matplotlib
 import matplotlib.pyplot as plt
 import diffuser.utils as utils
@@ -17,11 +16,11 @@ exps = [
     ]
 
 projection_variants = [
-    'none', 
+    'none',
     'end_obs', 
     # 'full_obs', 
     # 'end_all', 
-    # 'full_all'
+    # 'full_all',
     ]
 
 for exp in exps:
@@ -41,10 +40,10 @@ for exp in exps:
     dataset = diffusion_experiment.dataset
     trainer = diffusion_experiment.trainer
 
+    args.horizon = 16
+
     # Create scheduler
     scheduler = DDIMScheduler(num_train_timesteps=diffusion.n_timesteps)   
-    # scheduler = DDPMScheduler.from_pretrained("google/ddpm-cat-256")
-    # scheduler = DDIMScheduler(num_train_timesteps=trainer.noise_scheduler.config.num_train_timesteps)
     scheduler.set_timesteps(20)                         # Steps used for inference
 
     # Create projector
@@ -54,17 +53,21 @@ for exp in exps:
         trajectory_dim = diffusion.observation_dim
 
     if 'pointmaze' in exp:
-            obs_indices = {'x': 0, 'y': 1, 'vx': 2, 'vy': 3, 'goal_x': 4, 'goal_y': 5}
+        obs_indices = {'x': 0, 'y': 1, 'vx': 2, 'vy': 3, 'goal_x': 4, 'goal_y': 5}
+        cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['vx'], obs_indices['vy']]
     elif 'antmaze' in exp:
-        obs_indices = {'x': 0, 'y': 1, 'z':2, 'vx': 15, 'vy': 16, 'vz': 17, 'goal_x': 29, 'goal_y': 30, 'qx': 3, 'qy': 4, 'qz': 5, 'qw': 6}
+        obs_indices = {'x': 0, 'y': 1, 'z':2, 'qx': 3, 'qy': 4, 'qz': 5, 'qw': 6, 'hip1': 7, 'ankle1': 8, 'hip2': 9, 'ankle2': 10, 
+                       'hip3': 11, 'ankle3': 12, 'hip4': 13, 'ankle4': 14, 'vx': 15, 'vy': 16, 'vz': 17, 'dhip1': 21, 'dankle1': 22,
+                       'dhip2': 23, 'dankle2': 24, 'dhip3': 25, 'dankle3': 26, 'dhip4': 27, 'dankle4': 28, 'goal_x': 29, 'goal_y': 30, }
+        cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['z'], obs_indices['vx'], obs_indices['vy'], obs_indices['vz']]
 
     umaze_constraints = [
         [[0.25, -1.5], [1.5, -0.25], 'above'],
         [[1.5, 0.25], [0.25, 1.5], 'below'],
         ]
     antmaze_constraints = [
-        [[2, -6], [6, -2], 'above'],
-        [[6, 2], [2, 6], 'below'],
+        [[1, -6], [6, -1], 'above'],
+        [[6, 1], [1, 6], 'below'],
         ]
     
     constraint_list_obs = []
@@ -80,35 +83,44 @@ for exp in exps:
             C_row[obs_indices['x']] = m
             C_row[obs_indices['y']] = -1
             d *= -1
-        constraint_list_obs.append(('ineq', (C_row, -d)))
-        
-        # C_row[obs_indices['x']] = m
-        # C_row[obs_indices['y']] = -1
-        # C_row *= -1 if constraint[2] == 'above' else 1
-        # constraint_list_obs.append(('ineq', (C_row, -d)))
-        # if constraint[2] == 'below':
-        #     constraint_list_obs.append(('ineq', ([-m, 1, 0, 0, 0, 0], d)))
-        # elif constraint[2] == 'above':
-        #     constraint_list_obs.append(('ineq', ([m, -1, 0, 0, 0, 0], -d)))
+        constraint_list_obs.append(('ineq', (C_row, d)))
 
-    constraint_list_obs_dyn = copy(constraint_list_obs)
-    dynamic_constraints = [
-        ('deriv', [obs_indices['x'], obs_indices['vx']]),
-        ('deriv', [obs_indices['y'], obs_indices['vy']]),
-    ]
+    constraint_list_obs_dyn = copy(constraint_list_obs)   
+    if 'pointmaze' in exp:
+        dynamic_constraints = [
+            ('deriv', [obs_indices['x'], obs_indices['vx']]),
+            ('deriv', [obs_indices['y'], obs_indices['vy']]),
+        ]
+    elif 'antmaze' in exp:
+        dynamic_constraints = [
+            ('deriv', [obs_indices['x'], obs_indices['vx']]),
+            ('deriv', [obs_indices['y'], obs_indices['vy']]),
+            ('deriv', [obs_indices['z'], obs_indices['vz']]),
+            # ('deriv', [obs_indices['hip1'], obs_indices['dhip1']]),
+            # ('deriv', [obs_indices['ankle1'], obs_indices['dankle1']]),
+            # ('deriv', [obs_indices['hip2'], obs_indices['dhip2']]),
+            # ('deriv', [obs_indices['ankle2'], obs_indices['dankle2']]),
+            # ('deriv', [obs_indices['hip3'], obs_indices['dhip3']]),
+            # ('deriv', [obs_indices['ankle3'], obs_indices['dankle3']]),
+            # ('deriv', [obs_indices['hip4'], obs_indices['dhip4']]),
+            # ('deriv', [obs_indices['ankle4'], obs_indices['dankle4']]),
+        ]
+
     for constraint in dynamic_constraints:
         constraint_list_obs_dyn.append(constraint)
 
-    
-    seeds = [7, 10]         # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28]
+    seeds = [7, 10] if 'pointmaze' in exp else [0, 1]         # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28]
+    n_trials = max(2, len(seeds))
+    n_timesteps = 100 if 'pointmaze' in exp else 300
 
-    fig_all, ax_all = plt.subplots(len(seeds), len(projection_variants), figsize=(20, 10))
+    fig_all, ax_all = plt.subplots(n_trials, len(projection_variants), figsize=(20, 10))
+    ax_limits = [-1.5, 1.5] if 'pointmaze' in exp else [-6, 6]
 
     for variant_idx, variant in enumerate(projection_variants):
         print(f'Running {exp} - {variant}')
 
         minari_dataset = minari.load_dataset(exp, download=True)
-        env = minari_dataset.recover_environment(eval_env=True)     # Set render_mode='human' to visualize the environment
+        env = minari_dataset.recover_environment(eval_env=True) if 'pointmaze' in exp else minari_dataset.recover_environment()    # Set render_mode='human' to visualize the environment
 
         if variant == 'none':
             projector = None
@@ -122,7 +134,9 @@ for exp in exps:
                 constraint_list=constraint_list, 
                 normalizer=dataset.normalizer, 
                 only_last=only_last, 
-                dt=dt)
+                dt=dt,
+                cost_dims=cost_dims,
+            )
 
         # Create policy
         policy = Policy(
@@ -140,8 +154,6 @@ for exp in exps:
             env.env.env.env.ant_env.frame_skip = 5
 
         # Run policy
-        n_trials = 2
-        n_timesteps = 100 if 'pointmaze' in exp else 500
         fig, ax = plt.subplots(min(n_trials, 10), 6, figsize=(20, 10))
         fig.suptitle(f'{exp} - {variant}')
 
@@ -155,7 +167,7 @@ for exp in exps:
         n_steps = 0
         avg_time = np.zeros(n_trials)
         for i in range(n_trials):
-            seed = seeds[i] if ('pointmaze-umaze' in exp and i < len(seeds)) else i
+            seed = seeds[i] if ('pointmaze-umaze' in exp) else i
             obs, _ = env.reset(seed=seed)
             if 'antmaze' in exp:
                 obs = np.concatenate((obs['achieved_goal'], obs['observation'], obs['desired_goal']))
@@ -221,23 +233,24 @@ for exp in exps:
                 curr_ax.plot(np.array(obs_buffer)[:, obs_indices['x']], np.array(obs_buffer)[:, obs_indices['y']], 'k')
                 curr_ax.plot(np.array(obs_buffer)[0, obs_indices['x']], np.array(obs_buffer)[0, obs_indices['y']], 'go', label='Start')            # Start
                 curr_ax.plot(np.array(obs_buffer)[0, obs_indices['goal_x']], np.array(obs_buffer)[0, obs_indices['goal_y']], 'ro', label='Goal')   # Goal
-                curr_ax.set_xlim([-1.5, 1.5])
-                curr_ax.set_ylim([-1.5, 1.5])
+                curr_ax.set_xlim(ax_limits)
+                curr_ax.set_ylim(ax_limits)
             
             axes = [ax[i, 5], ax_all[i, variant_idx]]
             for __ in range(len(sampled_trajectories_all[i])):          # Iterate over timesteps of sampled trajectories
                 for ___ in range(min(args.batch_size, 4)):              # Iterate over batch
+                    close_to_origin_threshold = 0.1 if 'pointmaze' in exp else 1
                     last_plot_index = np.where(~(np.linalg.norm(
                         sampled_trajectories_all[i][__][___, :, [obs_indices['x'], obs_indices['y']]].T - \
                         dataset.normalizer.normalizers['observations'].unnormalize(np.zeros(diffusion.observation_dim))[[obs_indices['x'], obs_indices['y']]],
-                        axis=1) > 0.1))[0]
+                        axis=1) > close_to_origin_threshold))[0]
                     last_plot_index = args.horizon - 1 if len(last_plot_index) == 0 else last_plot_index[0]         # Ignore trajectory points at the end that are mapped to the origin (less than H steps to the goal)
                     for curr_ax in axes:
                         curr_ax.plot(sampled_trajectories_all[i][__][___, :last_plot_index, obs_indices['x']], sampled_trajectories_all[i][__][___, :last_plot_index, obs_indices['y']], 'b')
                         curr_ax.plot(sampled_trajectories_all[i][__][___, 0, obs_indices['x']], sampled_trajectories_all[i][__][___, 0, obs_indices['y']], 'go', label='Start')    # Current state
             ax[i, 5].plot(np.array(obs_buffer)[0, obs_indices['goal_x']], np.array(obs_buffer)[0, obs_indices['goal_y']], 'ro', label='Goal')   # Goal
-            ax[i, 5].set_xlim([-1.5, 1.5])
-            ax[i, 5].set_ylim([-1.5, 1.5])
+            ax[i, 5].set_xlim(ax_limits)
+            ax[i, 5].set_ylim(ax_limits)
 
             # Plot constraints
             axes = [ax[i, 4], ax[i, 5], ax_all[i, variant_idx]]
@@ -261,9 +274,7 @@ for exp in exps:
             print(f'Average number of steps in successes: {n_steps / n_success}')
         print(f'Average computation time per step: {np.mean(avg_time)}')
 
-        fig.savefig(f'./logs/umaze_plots/{exp}_{variant}.png')
-        # if len(exps) == 1:
-        #     plt.show()     
+        fig.savefig(f'./logs/umaze_plots/{exp}_{variant}.png')   
 
         ax_all[0, variant_idx].set_title(variant)
         env.close()

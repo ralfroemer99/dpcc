@@ -29,7 +29,7 @@ base = {
         'loss_discount': 1.0,
         'returns_condition': False,
         'action_weight': 10,            
-        'dim': 64,
+        'dim': 128,
         'dim_mults': (1, 2, 4, 8),
         'hidden_dim': 512,
         'attention': False,
@@ -43,7 +43,7 @@ base = {
         'preprocess_fns': [],
         'clip_denoised': False,
         'use_padding': True,
-        'max_path_length': 500,
+        'max_path_length': 400,
         'include_returns': True,
         'returns_scale': 400,   # Determined using rewards from the dataset
         'discount': 0.99,
@@ -55,7 +55,7 @@ base = {
 
         ## training
         'n_steps_per_epoch': 1000,  # 10000
-        'n_train_steps': 5e5,       # 1e6
+        'n_train_steps': 1e6,       # 1e6
         'batch_size': 32,            # 32
         'learning_rate': 2e-5,      # 2e-4
         'gradient_accumulate_every': 2,
@@ -68,7 +68,7 @@ base = {
     'plan': {
         'policy': 'sampling.Policy',
         'max_episode_length': 100,
-        'batch_size': 16,
+        'batch_size': 8,
         'preprocess_fns': [],
         'device': 'cuda',
         'seed': 0,

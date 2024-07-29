@@ -1,18 +1,31 @@
+import time
+import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
+import numpy as np
 import torch
+import proxsuite
 from qpth.qp import QPFunction
-from casadi import nlpsol
+
+def solve_qp_proxsuite(i, Q_np, r_np, A, b, C, d, horizon, transition_dim):
+    qp = proxsuite.proxqp.dense.QP(horizon * transition_dim, A.shape[0], C.shape[0])
+    qp.init(Q_np, r_np[i], A, b, C, None, d)
+    qp.solve()
+    return qp.results.x
+
 
 class Projector:
 
-    def __init__(self, horizon, transition_dim, constraint_list=[], normalizer=None, dt=0.1, 
-                 skip_initial_state=True, only_last=False, device='cuda'):
+    def __init__(self, horizon, transition_dim, constraint_list=[], normalizer=None, dt=0.1,
+                 cost_dims=None, skip_initial_state=True, only_last=False, device='cuda', solver='proxsuite', 
+                 parallelize=False):
         self.horizon = horizon
         self.transition_dim = transition_dim
         self.dt = torch.tensor(dt, device=device)
         self.skip_initial_state = skip_initial_state
         self.only_last = only_last
         self.device = device
-
+        self.solver = solver
+        self.parallelize = parallelize
         self.normalizer = normalizer
 
         # if normalizer is not None:
@@ -20,14 +33,21 @@ class Projector:
         #         normalizer.normalizers['observations'].__class__.__name__ != 'LimitsNormalizer':
         #         raise ValueError('Normalizer not supported')
 
+        if cost_dims is not None:
+            costs = torch.ones(transition_dim, device=self.device) * 1e-3
+            for idx in cost_dims:
+                costs[idx] = 1
+            self.Q = torch.diag(torch.tile(costs, (self.horizon, )))                    # Quadratic cost
+        else:
+            self.Q = torch.eye(transition_dim * horizon, device=self.device)                    # Quadratic cost
+
         if self.normalizer is not None:
             # normalizer = self.normalizer    # for simple testing
             normalizer = self.normalizer.normalizers['observations']
             x_max = normalizer.maxs
             x_min = normalizer.mins
-            self.Q = torch.diag(torch.tile(torch.tensor(x_max - x_min, device='cuda') ** 2, (self.horizon, )))
-        else:
-            self.Q = torch.eye(transition_dim * horizon, device=self.device)                    # Quadratic cost
+            self.Q *= torch.diag(torch.tile(torch.tensor(x_max - x_min, device='cuda') ** 2, (self.horizon, )))
+        
         self.A = torch.empty((0, self.transition_dim * self.horizon), device=self.device)   # Equality constraints
         self.b = torch.empty(0, device=self.device)
         self.C = torch.empty((0, self.transition_dim * self.horizon), device=self.device)   # Inequality constraints
@@ -49,15 +69,18 @@ class Projector:
         self.safety_constraints.build_matrices()
         self.dynamic_constraints.build_matrices()
         self.append_constraint(self.safety_constraints)
-        self.append_constraint(self.dynamic_constraints)     
+        self.append_constraint(self.dynamic_constraints)
+        self.add_numpy_constraints()     
 
-    def __call__(self, trajectory, horizon=None, constraints=None):
+
+    def __call__(self, trajectory, constraints=None):
         """
             trajectory: np.ndarray of shape (batch_size, horizon, transition_dim) or (horizon, transition_dim)
             Solve an optimization problem of the form 
                 \hat z =   argmin_z 1/2 z^T Q z + r^T z
                         subject to  Az  = b
                                     Cz <= d
+            where z = (o_0, o_1, ..., o_{H-1}) is the trajectory in vector form. The matrices A, b, C, and d are defined by the dynamic and safety constraints.
                                     
         """
         
@@ -65,74 +88,96 @@ class Projector:
 
         # Reshape the trajectory to a batch of vectors (from B x H x T to B x (HT) or a vector (from H x T to HT)
         # trajectory = trajectory.reshape(trajectory.shape[0], -1) if trajectory.ndim == 3 else trajectory.view(-1)
-        if trajectory.ndim == 2:        # From H x T to HT
-            batch_size = 1
-            trajectory = trajectory.view(-1)
-        else:      # From B x H x T to B x (HT)
-            batch_size = trajectory.shape[0]
-            trajectory = trajectory.view(trajectory.shape[0], -1)
+        # if trajectory.ndim == 2:        # From H x T to HT
+        #     batch_size = 1
+        #     trajectory = trajectory.view(-1)
+        # else:      # From B x H x T to B x (HT)
+        batch_size = trajectory.shape[0]
+        trajectory = trajectory.view(trajectory.shape[0], -1)
 
         # Cost
         r = - trajectory @ self.Q
 
         # Constraints
-        A = self.A
-        b = self.b
-        C = self.C
-        d = self.d
+        if self.solver == 'qpth':
+            A = self.A
+            b = self.b
+            C = self.C
+            d = self.d
+        else:
+            A = self.A_np
+            b = self.b_np
+            C = self.C_np
+            d = self.d_np
 
         if self.skip_initial_state:
-            s_0 = trajectory[:self.transition_dim] if batch_size == 1 else trajectory[0, :self.transition_dim]    # Current state, should be kept fixed
+            s_0 = trajectory[:self.transition_dim] if batch_size == 1 else trajectory[0, :self.transition_dim]    # Current state
+            if self.solver == 'proxsuite':
+                s_0 = s_0.cpu().numpy()
             counter = 0
             for constraint in self.dynamic_constraints.constraint_list:
                 if constraint[0] == 'deriv':
                     x_idx = int(constraint[1][0])
-                    dx_idx = int(constraint[1][1])
-                    A[counter * (self.horizon - 1), x_idx] = 0
-                    A[counter * (self.horizon - 1), dx_idx] = 0
-
-                    if self.normalizer is not None:
-                        # normalizer = self.normalizer    # for simple testing
-                        normalizer = self.normalizer.normalizers['observations']
-                        x_min, x_max = normalizer.mins[x_idx], normalizer.maxs[x_idx]
-                        dx_min, dx_max = normalizer.mins[dx_idx], normalizer.maxs[dx_idx]
-                        x_diff = x_max - x_min
-                        dx_diff = dx_max - dx_min
-                        dx_sum = dx_max + dx_min
-
-                        b[counter * (self.horizon - 1)] = - x_diff * s_0[x_idx] - dx_diff * s_0[dx_idx] * self.dt - dx_sum * self.dt
-                    else:
-                        b[counter * (self.horizon - 1)] = -s_0[x_idx] - s_0[dx_idx] * self.dt
+                    b[counter * self.horizon] = s_0[x_idx]
                     counter += 1
 
-        # Add additional constraints (if any)
+        # Add additional constraints (if any) --> TODO: For proxsuite, add them to the numpy matrices
         if constraints is not None:
             for constraint in constraints:
                 constraint.build_matrices()
-                A = torch.cat([A, constraint.A], dim=0)
-                b = torch.cat([b, constraint.b], dim=0)
-                C = torch.cat([C, constraint.C], dim=0)
-                d = torch.cat([d, constraint.d], dim=0)        
+                if self.solver == 'qpth':
+                    A = torch.cat([A, constraint.A], dim=0)
+                    b = torch.cat([b, constraint.b], dim=0)
+                    C = torch.cat([C, constraint.C], dim=0)
+                    d = torch.cat([d, constraint.d], dim=0)     
+                else:
+                    A = np.concatenate([A, constraint.A.cpu().numpy()], axis=0)
+                    b = np.concatenate([b, constraint.b.cpu().numpy()], axis=0)
+                    C = np.concatenate([C, constraint.C.cpu().numpy()], axis=0)
+                    d = np.concatenate([d, constraint.d.cpu().numpy()], axis=0) 
 
-        # Solve optimization problem with qpth solver
-        sol = QPFunction()(self.Q, r, C, d, A, b)
-        sol = sol.view(dims)
+        # start_time = time.time()
+        if self.solver == 'qpth':
+            # Solve optimization problem with qpth solver
+            sol = QPFunction()(self.Q, r, C, d, A, b)
+            sol = sol.view(dims)
+        else:
+            # Solve optimization problem with proxsuite solver
+            r_np = r.cpu().numpy()
+            sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
+            if self.parallelize == False:
+                qp = proxsuite.proxqp.dense.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0])
+                # qp = proxsuite.proxqp.sparse.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0])
+                for i in range(batch_size):
+                    qp.init(self.Q_np, r_np[i], A, b, C, None, d)
+                    qp.solve()
+                    sol_np[i] = qp.results.x
+            else:
+                with ThreadPoolExecutor() as executor:
+                    results = list(executor.map(solve_qp_proxsuite, range(batch_size), [self.Q_np]*batch_size, [r_np]*batch_size, [A]*batch_size, [b]*batch_size, 
+                                                [C]*batch_size, [d]*batch_size, [self.horizon]*batch_size, [self.transition_dim]*batch_size))
 
-        # Solve optimization problem with lqp_py solver. TODO: Implement
-        # A = A.repeat(batch_size, 1, 1)
-        # b = b.repeat(batch_size, 1)
-        # C = C.repeat(batch_size, 1, 1)
-        # d = d.repeat(batch_size, 1)
-        # lb = self.lb.repeat(batch_size, 1)
-        # ub = self.ub.repeat(batch_size, 1)
+                for i, result in enumerate(results):
+                    sol_np[i] = result
+            sol = torch.tensor(sol_np, device=self.device).reshape(dims)
+
+        # print(f'Projection time {self.solver}:', time.time() - start_time)
 
         return sol
+
 
     def append_constraint(self, constraint):
         self.C = torch.cat([self.C, constraint.C], dim=0)
         self.d = torch.cat([self.d, constraint.d], dim=0)
         self.A = torch.cat([self.A, constraint.A], dim=0)
-        self.b = torch.cat([self.b, constraint.b], dim=0)      
+        self.b = torch.cat([self.b, constraint.b], dim=0)
+
+    def add_numpy_constraints(self):
+        self.A_np = self.A.cpu().numpy()
+        self.b_np = self.b.cpu().numpy()     
+        self.C_np = self.C.cpu().numpy()
+        self.d_np = self.d.cpu().numpy()
+        self.Q_np = self.Q.cpu().numpy()
 
 
 class Constraints:
@@ -244,71 +289,7 @@ class BoxConstraints(Constraints):
                 self.b = torch.cat((self.b, vec_append), dim=0)
             else:
                 self.C = torch.cat((self.C, mat_append), dim=0)
-                self.d = torch.cat((self.d, vec_append), dim=0)   
-
-    # def build_matrices2(self, constraint_dict):
-    #     """
-    #         Input:
-    #             constraint_dict: dict of constraints for each dimension
-    #                 e.g. {'0': {'lb': -1, 'ub': 1}, '1': {'ub': 2}, '2': {'lb': -1}} --> 
-    #                 x_0 in [-1, 1], x_1 in [-inf, 2], x_2 in [-1, inf], where x_i is the i-th dimension of the state or state-action vectors
-    #         The matrices have the following shapes:
-    #             C: (horizon * n_bounds, transition_dim * horizon)
-    #             d: (horizon * n_bounds)
-    #             lb: horizon * transition_dim
-    #         C consists of n_bounds blocks of shape (horizon, transition_dim * horizon), where each block corresponds to a 
-    #         constraint (ub or lb) on a specific dimension. The block has a 1 or -1 at the corresponding dimension and time step.
-        
-    #     """
-
-    #     lb = -torch.inf * torch.ones(self.horizon * self.transition_dim, device=self.device)
-    #     ub = torch.inf * torch.ones(self.horizon * self.transition_dim, device=self.device)
-
-    #     for dim, bounds in constraint_dict.items():     # A dimension can have more than one constraint
-    #         dim = int(dim)
-    #         for bound in bounds:
-    #             if self.skip_initial_state:
-    #                 lb[dim + self.transition_dim::self.transition_dim] = bounds[bound] if bound == 'lb' else lb[dim + self.transition_dim::self.transition_dim]
-    #                 ub[dim + self.transition_dim::self.transition_dim] = bounds[bound] if bound == 'ub' else ub[dim + self.transition_dim::self.transition_dim]
-    #             else:
-    #                 lb[dim::self.transition_dim] = bounds[bound] if bound == 'lb' else lb[dim::self.transition_dim]
-    #                 ub[dim::self.transition_dim] = bounds[bound] if bound == 'ub' else ub[dim::self.transition_dim]
-                
-    #             # if self.skip_initial_state:
-    #             #     h = self.horizon - 1
-    #             # else:
-    #             #     h = self.horizon
-    #             C_append = torch.zeros(self.horizon, self.transition_dim * self.horizon, device=self.device)
-    #             d_append = torch.zeros(self.horizon, device=self.device)
-                
-    #             sign = 1 if bound == 'ub' else -1
-                
-    #             for t in range(self.horizon):
-    #                 # col = (t + 1) * self.transition_dim + dim if self.skip_initial_state else t * self.transition_dim + dim
-
-    #                 C_append[t, t * self.transition_dim + dim] = sign 
-    #                 d_append[t] = sign * bounds[bound]    
-                
-    #             if self.normalizer is not None:
-    #                 x_min = self.normalizer.normalizers['observations'].mins[dim]
-    #                 x_max = self.normalizer.normalizers['observations'].maxs[dim]
-    #                 # x_min = self.normalizer.mins[dim]
-    #                 # x_max = self.normalizer.maxs[dim]
-    #                 C_append = C_append * (x_max - x_min) / 2
-    #                 # d_append = d_append - sign * x_min - (x_max - x_min) / 2
-    #                 d_append = d_append - sign * (x_min + x_max) / 2
-
-    #             self.C = torch.cat((self.C, C_append), dim=0)
-    #             self.d = torch.cat((self.d, d_append), dim=0)
-
-    #     if self.skip_initial_state:
-    #         mask = torch.ones(self.C.shape[0], dtype=torch.bool, device=self.device)
-    #         mask[::self.horizon] = False
-    #         self.C = self.C[mask]
-    #         self.d = self.d[mask]
-
-    #     self.lb = lb
-    #     self.ub = ub          
+                self.d = torch.cat((self.d, vec_append), dim=0)         
 
 class DynamicConstraints(Constraints):
     def __init__(self, skip_initial_state=True, dt=0.02, *args, **kwargs):
@@ -369,9 +350,11 @@ class DynamicConstraints(Constraints):
                         mat_append[i, (i + 1) * self.transition_dim + x_idx] = -1
                         vec_append[i] = 0
 
-                # if self.skip_initial_state: --> Do that in the projection method because it needs the current state. For that, record the relevant rows
-                #     mat_append[0, x_idx] = 0
-                #     mat_append[0, dx_idx] = 0
+                if self.skip_initial_state:     # --> Do that in the projection method because it needs the current state. For that, record the relevant rows
+                    mat_fix_initial = torch.zeros(1, self.transition_dim * self.horizon, device=self.device)    # Fix the initial state
+                    mat_fix_initial[0, x_idx] = 1
+                    mat_append = torch.cat((mat_fix_initial, mat_append), dim=0)
+                    vec_append = torch.cat((torch.tensor([0], device=self.device), vec_append), dim=0)          # Must be changed to current state in each iteration!
 
                 self.A = torch.cat((self.A, mat_append), dim=0)
                 self.b = torch.cat((self.b, vec_append), dim=0)

@@ -13,7 +13,7 @@ exps = [
     # 'antmaze-umaze-v1',
     # 'pointmaze-open-dense-v2',
     'pointmaze-umaze-dense-v2',
-    # 'pointmaze-medium-dense-v2',
+    'pointmaze-medium-dense-v2',
     # 'pointmaze-large-dense-v2'
         ]
 
@@ -47,12 +47,12 @@ for exp in exps:
         trajectory_dim = diffusion.observation_dim
 
     # constraint_specs = [{'0': {'lb': -0.5, 'ub': 0.5}, '1': {'lb': 0, 'ub': 0.5}}]     # TODO: Get constraints from config
-    constraint_specs = [{'ineq': ([-1, 1, 0, 0, 0, 0], -1.5)}] if 'pointmaze-umaze' in exp else []
+    constraint_list = []
     
     projector = Projector(
         horizon=args.horizon,
         transition_dim=trajectory_dim,
-        constraints_specs=constraint_specs,
+        constraint_list=constraint_list,
         normalizer=dataset.normalizer)
 
     # Create policy
@@ -66,12 +66,14 @@ for exp in exps:
     )    
 
     # Plot losses
-    # fig, ax = plt.subplots(1, 2, figsize=(10, 5))
-    # utils.plot_losses(diffusion_losses, ax=ax[0], title='Diffusion losses')
-    # plt.show()
+    fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+    utils.plot_losses(diffusion_losses, ax=ax[0], title='Diffusion losses')
+    if len(exps) == 1:
+        plt.show()
 
     dataset = minari.load_dataset(exp, download=True)
-    env = dataset.recover_environment(eval_env=True)     # Set render_mode='human' to visualize the environment
+    # env = dataset.recover_environment(eval_env=True)     # Set render_mode='human' to visualize the environment
+    env = dataset.recover_environment()     # Set render_mode='human' to visualize the environment
 
     if 'pointmaze' in exp:
         env.env.env.env.point_env.frame_skip = 2
@@ -79,8 +81,8 @@ for exp in exps:
         env.env.env.env.ant_env.frame_skip = 5
 
     # Run policy
-    n_trials = 10
-    n_timesteps = 100
+    n_trials = 20
+    n_timesteps = 500
     fig, ax = plt.subplots(min(n_trials, 10), 5)
 
     action_update_every = 1

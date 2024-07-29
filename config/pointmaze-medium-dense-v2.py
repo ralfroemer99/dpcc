@@ -31,6 +31,7 @@ base = {
         'action_weight': 10,            
         'dim': 32,
         'dim_mults': (1, 2, 4, 8),
+        'hidden_dim': 256,
         'attention': False,
         'condition_dropout': 0.25,
         'condition_guidance_w': 1.2,
@@ -42,7 +43,7 @@ base = {
         'preprocess_fns': [],
         'clip_denoised': False,
         'use_padding': True,
-        'max_path_length': 200,
+        'max_path_length': 140,
         'include_returns': True,
         'returns_scale': 400,   # Determined using rewards from the dataset
         'discount': 0.99,
