@@ -10,9 +10,9 @@ from diffuser.sampling import Projector
 
 
 exps = [
-    'antmaze-umaze-v1',
+    # 'antmaze-umaze-v1',
     # 'pointmaze-open-dense-v2',
-    # 'pointmaze-umaze-dense-v2',
+    'pointmaze-umaze-dense-v2',
     # 'pointmaze-medium-dense-v2',
     # 'pointmaze-large-dense-v2'
         ]
@@ -73,7 +73,7 @@ for exp in exps:
 
     dataset = minari.load_dataset(exp, download=True)
     # env = dataset.recover_environment(eval_env=True)     # Set render_mode='human' to visualize the environment
-    env = dataset.recover_environment()     # Set render_mode='human' to visualize the environment
+    env = dataset.recover_environment(eval_env=True) if 'pointmaze' in exp else dataset.recover_environment()     # Set render_mode='human' to visualize the environment
 
     if 'pointmaze' in exp:
         env.env.env.env.point_env.frame_skip = 2
@@ -184,7 +184,8 @@ for exp in exps:
     if n_success > 0:
         print(f'Average number of steps in successes: {n_steps / n_success}')
     print(f'Average computation time per step: {np.mean(avg_time)}')
-
+    
+    fig.savefig(f'logs/last_plot.png')
     if len(exps) == 1:
         plt.show()     
 

@@ -11,14 +11,14 @@ from diffuser.sampling import Projector
 
 
 exps = [
-    # 'pointmaze-umaze-dense-v2'
-    'antmaze-umaze-v1',
+    'pointmaze-umaze-dense-v2'
+    # 'antmaze-umaze-v1',
     ]
 
 projection_variants = [
     # 'none',
-    # 'end_obs', 
-    # 'full_obs', 
+    # 'end_safe', 
+    # 'full_safe', 
     'end_all', 
     'full_all',
     ]
@@ -72,7 +72,7 @@ for exp in exps:
             [[6, 1.5], [1.5, 6], 'below'],
             ]
     
-    constraint_list_obs = []
+    constraint_list_safe = []
     constraint_points = safety_constraints
     for constraint in constraint_points:
         m = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
@@ -85,9 +85,9 @@ for exp in exps:
             C_row[obs_indices['x']] = m
             C_row[obs_indices['y']] = -1
             d *= -1
-        constraint_list_obs.append(('ineq', (C_row, d)))
+        constraint_list_safe.append(('ineq', (C_row, d)))
 
-    constraint_list_obs_dyn = copy(constraint_list_obs)   
+    constraint_list_safe_dyn = copy(constraint_list_safe)   
     if 'pointmaze' in exp:
         dynamic_constraints = [
             ('deriv', [obs_indices['x'], obs_indices['vx']]),
@@ -109,13 +109,16 @@ for exp in exps:
         ]
 
     for constraint in dynamic_constraints:
-        constraint_list_obs_dyn.append(constraint)
+        constraint_list_safe_dyn.append(constraint)
 
-    seeds = [7, 10] if 'pointmaze' in exp else [0, 1, 2, 3, 4, 5, 6, 7]         # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28]
+    if 'pointmaze' in exp:
+        seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
+    else:
+        seeds = [0, 1, 2, 3, 4, 5, 6, 7]                    
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
-    fig_all, ax_all = plt.subplots(n_trials, len(projection_variants), figsize=(20, 10))
+    fig_all, ax_all = plt.subplots(min(n_trials, 5), len(projection_variants), figsize=(20, 20))
     ax_limits = [-1.5, 1.5] if 'pointmaze' in exp else [-6, 6]
 
     for variant_idx, variant in enumerate(projection_variants):
@@ -127,7 +130,7 @@ for exp in exps:
         if variant == 'none':
             projector = None
         else:
-            constraint_list = constraint_list_obs if 'obs' in variant else constraint_list_obs_dyn
+            constraint_list = constraint_list_safe if 'safe' in variant else constraint_list_safe_dyn
             only_last = True if 'end' in variant else False
             dt = 0.02 if 'pointmaze' in exp else 0.05
             projector = Projector(
@@ -156,7 +159,7 @@ for exp in exps:
             env.env.env.env.ant_env.frame_skip = 5
 
         # Run policy
-        fig, ax = plt.subplots(min(n_trials, 10), 6, figsize=(20, 10))
+        fig, ax = plt.subplots(min(n_trials, 10), 6, figsize=(20, 20))
         fig.suptitle(f'{exp} - {variant}')
 
         action_update_every = 1
@@ -167,6 +170,7 @@ for exp in exps:
 
         n_success = 0
         n_steps = 0
+        n_violations = 0
         avg_time = np.zeros(n_trials)
         for i in range(n_trials):
             seed = seeds[i] if ('pointmaze-umaze' in exp) else i
@@ -180,15 +184,23 @@ for exp in exps:
 
             sampled_trajectories = []
             disable_projection = True
+            n_violations_curr = 0
             for _ in range(n_timesteps):
                 start = time.time()
                 conditions = {0: obs}
+
+                # Check if a safety constraint is violated
+                for constraint in constraint_list_safe:
+                    c, d = constraint[1]
+                    if obs @ c >= d + 1e-2:   # (Close to) Violation of constraint
+                        n_violations_curr += 1
+                        break
                 
                 action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection)
 
                 # Check whether one of the sampled trajectories violates a 
                 disable_projection = True
-                for constraint in constraint_list_obs:
+                for constraint in constraint_list_safe:
                     c, d = constraint[1]
                     if np.any(samples.observations @ c >= d - 1e-2):   # (Close to) Violation of constraint
                         disable_projection = False
@@ -222,17 +234,18 @@ for exp in exps:
                 if info['success']:
                     n_success += 1
                     n_steps += _
-                    print(f'Trial {i} succeeded in {_} steps')
+                    n_violations += n_violations_curr
+                    # print(f'Trial {i} succeeded in {_} steps')
                     avg_time[i] /= _
                     break
                 if terminated or truncated or _ == n_timesteps - 1:
-                    print(f'Trial {i} terminated in {_} steps')
+                    # print(f'Trial {i} terminated in {_} steps')
                     avg_time[i] /= _
                     break
 
             sampled_trajectories_all.append(sampled_trajectories)
 
-            if i >= 10:     # Plot only the first 10 trials
+            if i >= 5:     # Plot only the first 10 trials
                 continue
             plot_states = ['x', 'y', 'vx', 'vy']
 
@@ -283,13 +296,14 @@ for exp in exps:
 
         print(f'Success rate: {n_success / n_trials}')
         if n_success > 0:
-            print(f'Average number of steps in successes: {n_steps / n_success}')
+            print(f'Avg number of steps in successful episodes: {n_steps / n_success}')
+            print(f'Avg number of constraint violations in successful episodes: {n_violations / n_success}')
         print(f'Average computation time per step: {np.mean(avg_time)}')
 
-        fig.savefig(f'./logs/umaze_plots/{exp}_{variant}.png')   
+        fig.savefig(f'{args.savepath}/{variant}.png')   
 
         ax_all[0, variant_idx].set_title(variant)
         env.close()
 
-    fig_all.savefig(f'./logs/umaze_plots/{exp}.png')
+    fig_all.savefig(f'{args.savepath}/all.png')
     plt.show()

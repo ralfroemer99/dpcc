@@ -7,6 +7,7 @@ exps = [
         # 'pointmaze-medium-dense-v2',
         # 'pointmaze-large-dense-v2',
         'antmaze-umaze-v1',
+        'relocate-cloned-v2',
         ]
 
 for exp in exps:
