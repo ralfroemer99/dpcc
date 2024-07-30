@@ -1,0 +1,5 @@
+numpy==1.26.4
+scipy==1.12.0
+packaging==24.0
+minigrid==2.3.1
+minari==0.4.0

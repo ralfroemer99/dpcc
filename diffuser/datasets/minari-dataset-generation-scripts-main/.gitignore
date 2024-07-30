@@ -1,0 +1,8 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# downloaded d4rl datasets
+scripts/adroit/d4rl_datasets
+scripts/kitchen/d4rl_datasets
+scripts/kitchen/kitchen_demos_multitask
+scripts/kitchen/videos
