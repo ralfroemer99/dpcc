@@ -23,7 +23,7 @@ base = {
         ## model
         'model': 'models.UNet1DTemporalCondModel',
         'diffusion': 'models.GaussianInvDynDiffusion',
-        'horizon': 8,
+        'horizon': 16,
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
         'loss_discount': 1.0,
@@ -81,7 +81,7 @@ base = {
         'exp_name': watch(args_to_watch),
 
         ## diffusion model
-        'horizon': 8,
+        'horizon': 16,
         'n_diffusion_steps': 20,
         'returns_condition': False,
         'use_padding': True,

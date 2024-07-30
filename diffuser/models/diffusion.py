@@ -451,23 +451,15 @@ class GaussianInvDynDiffusion(nn.Module):
 
             # Project trajectory
             if projector is not None:
-                if projector.only_last == False and i <= self.n_timesteps * 0.6:
+                if projector.only_last == False and i <= 0.8 * self.n_timesteps:
                     x = projector(x, constraints)
                 elif projector.only_last == True and i == 0:
                     x = projector(x, constraints)
 
-            # if i <= self.n_timesteps * 0.8 and projector is not None and projector.only_last == False:
-                # start_time = time.time()
-                # x = projector(x, constraints)
-                # elapsed_time = time.time() - start_time
-                # print(f'Projection time: {elapsed_time}')
-
             # progress.update({'t': i})
-
             if return_diffusion: diffusion.append(x)
 
         # progress.close()
-
         if return_diffusion:
             return x, torch.stack(diffusion, dim=1)
         else:

@@ -17,10 +17,10 @@ exps = [
 
 projection_variants = [
     'none',
-    'end_obs', 
+    # 'end_obs', 
     # 'full_obs', 
     # 'end_all', 
-    # 'full_all',
+    'full_all',
     ]
 
 for exp in exps:
@@ -39,8 +39,6 @@ for exp in exps:
     diffusion = diffusion_experiment.diffusion
     dataset = diffusion_experiment.dataset
     trainer = diffusion_experiment.trainer
-
-    args.horizon = 16
 
     # Create scheduler
     scheduler = DDIMScheduler(num_train_timesteps=diffusion.n_timesteps)   
@@ -61,17 +59,19 @@ for exp in exps:
                        'dhip2': 23, 'dankle2': 24, 'dhip3': 25, 'dankle3': 26, 'dhip4': 27, 'dankle4': 28, 'goal_x': 29, 'goal_y': 30, }
         cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['z'], obs_indices['vx'], obs_indices['vy'], obs_indices['vz']]
 
-    umaze_constraints = [
-        [[0.25, -1.5], [1.5, -0.25], 'above'],
-        [[1.5, 0.25], [0.25, 1.5], 'below'],
-        ]
-    antmaze_constraints = [
-        [[1, -6], [6, -1], 'above'],
-        [[6, 1], [1, 6], 'below'],
-        ]
+    if 'pointmaze' in exp:
+        safety_constraints = [
+            [[0.25, -1.5], [1.5, -0.25], 'above'],
+            [[1.5, 0.25], [0.25, 1.5], 'below'],
+            ]
+    else:
+        safety_constraints = [
+            [[1, -6], [6, -1], 'above'],
+            [[6, 1], [1, 6], 'below'],
+            ]
     
     constraint_list_obs = []
-    constraint_points = umaze_constraints if 'pointmaze-umaze' in exp else antmaze_constraints
+    constraint_points = safety_constraints
     for constraint in constraint_points:
         m = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
         d = constraint[0][1] - m * constraint[0][0]
@@ -117,7 +117,7 @@ for exp in exps:
     ax_limits = [-1.5, 1.5] if 'pointmaze' in exp else [-6, 6]
 
     for variant_idx, variant in enumerate(projection_variants):
-        print(f'Running {exp} - {variant}')
+        print(f'------------------------Running {exp} - {variant}----------------------------')
 
         minari_dataset = minari.load_dataset(exp, download=True)
         env = minari_dataset.recover_environment(eval_env=True) if 'pointmaze' in exp else minari_dataset.recover_environment()    # Set render_mode='human' to visualize the environment
@@ -177,11 +177,29 @@ for exp in exps:
             action_buffer = []
 
             sampled_trajectories = []
+            disable_projection = True
             for _ in range(n_timesteps):
                 start = time.time()
                 conditions = {0: obs}
                 
-                action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon)
+                action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection)
+
+                # Check whether one of the sampled trajectories violates a 
+                disable_projection = True
+                for constraint in constraint_list_obs:
+                    c, d = constraint[1]
+                    if np.any(samples.observations @ c >= d - 1e-2):   # (Close to) Violation of constraint
+                    # for n in range(args.batch_size):
+                    #     for t in range(args.horizon):
+                    #         if np.dot(c, samples.observations[n, t]) >= d - 1e-2:   # (Close to) Violation of constraint
+                    #             disable_projection = False
+                    #             break
+                    #     if not disable_projection:
+                    #         break
+                    # if not disable_projection:
+                        disable_projection = False
+                        print('Enabled projection at timestep', _)
+                        break
 
                 if _ % save_samples_every == 0:
                     sampled_trajectories.append(samples.observations[:, :, :])

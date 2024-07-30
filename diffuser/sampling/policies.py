@@ -36,7 +36,7 @@ class Policy:
         # Projector
         self.projector = projector
 
-    def __call__(self, conditions, batch_size=1, horizon=16, test_ret=None, constraints=None):
+    def __call__(self, conditions, batch_size=1, horizon=16, test_ret=None, constraints=None, disable_projection=False):
         conditions = {k: self.preprocess_fn(v) for k, v in conditions.items()}
         conditions = self._format_conditions(conditions, batch_size)
 
@@ -44,7 +44,8 @@ class Policy:
         returns = to_device(test_ret * torch.ones(batch_size, 1), 'cuda')
 
         # Use GaussianDiffusion model with DDPM
-        samples = self.model(conditions, returns=returns, projector=self.projector, constraints=constraints, **self.sample_kwargs)
+        projector = self.projector if not disable_projection else None
+        samples = self.model(conditions, returns=returns, projector=projector, constraints=constraints, **self.sample_kwargs)
 
         # Use UNet with variable scheduler
         # shape = (batch_size, horizon, self.model.observation_dim + self.action_dim)
