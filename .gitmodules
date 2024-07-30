@@ -1,3 +1,0 @@
-[submodule "diffuser/datasets/minari"]
-	path = diffuser/datasets/minari
-	url = git@github.com:Farama-Foundation/minari-dataset-generation-scripts.git

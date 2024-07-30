@@ -451,7 +451,7 @@ class GaussianInvDynDiffusion(nn.Module):
 
             # Project trajectory
             if projector is not None:
-                if projector.only_last == False and i <= 0.8 * self.n_timesteps:
+                if projector.only_last == False and i <= 0.5 * self.n_timesteps:
                     x = projector(x, constraints)
                 elif projector.only_last == True and i == 0:
                     x = projector(x, constraints)

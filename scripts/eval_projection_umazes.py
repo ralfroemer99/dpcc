@@ -16,9 +16,9 @@ exps = [
     ]
 
 projection_variants = [
-    'none',
-    'end_obs', 
-    'full_obs', 
+    # 'none',
+    # 'end_obs', 
+    # 'full_obs', 
     'end_all', 
     'full_all',
     ]
@@ -109,7 +109,7 @@ for exp in exps:
     for constraint in dynamic_constraints:
         constraint_list_obs_dyn.append(constraint)
 
-    seeds = [7, 10] if 'pointmaze' in exp else [0, 1]         # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28]
+    seeds = [7, 10] if 'pointmaze' in exp else [0, 1, 2, 3, 4, 5, 6, 7]         # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28]
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
@@ -189,16 +189,8 @@ for exp in exps:
                 for constraint in constraint_list_obs:
                     c, d = constraint[1]
                     if np.any(samples.observations @ c >= d - 1e-2):   # (Close to) Violation of constraint
-                    # for n in range(args.batch_size):
-                    #     for t in range(args.horizon):
-                    #         if np.dot(c, samples.observations[n, t]) >= d - 1e-2:   # (Close to) Violation of constraint
-                    #             disable_projection = False
-                    #             break
-                    #     if not disable_projection:
-                    #         break
-                    # if not disable_projection:
                         disable_projection = False
-                        print('Enabled projection at timestep', _)
+                        # print('Enabled projection at timestep', _)
                         break
 
                 if _ % save_samples_every == 0:
