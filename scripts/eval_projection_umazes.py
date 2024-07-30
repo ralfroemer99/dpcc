@@ -17,9 +17,9 @@ exps = [
 
 projection_variants = [
     'none',
-    # 'end_obs', 
-    # 'full_obs', 
-    # 'end_all', 
+    'end_obs', 
+    'full_obs', 
+    'end_all', 
     'full_all',
     ]
 
