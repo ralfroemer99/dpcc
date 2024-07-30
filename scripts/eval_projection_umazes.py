@@ -66,8 +66,10 @@ for exp in exps:
             ]
     else:
         safety_constraints = [
-            [[1, -6], [6, -1], 'above'],
-            [[6, 1], [1, 6], 'below'],
+            # [[1, -6], [6, -1], 'above'],
+            # [[6, 1], [1, 6], 'below'],
+            [[1.5, -6], [6, -1.5], 'above'],
+            [[6, 1.5], [1.5, 6], 'below'],
             ]
     
     constraint_list_obs = []

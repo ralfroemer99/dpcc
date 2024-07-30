@@ -42,27 +42,27 @@ env = dataset.recover_environment(render_mode='human', eval_env=True)
 #     obs, rew, terminated, truncated, info = env.step(action)
 #     env.render()
 
-n_plot = 1000
+n_plot = 100
 
 episodes_generator = dataset.iterate_episodes(episode_indices=np.arange(n_plot))
 
 # Get violation
-if 'pointmaze' in exp:
-    dt = env.env.env.env.point_env.frame_skip * 0.01
-if 'antmaze' in exp:
-    dt = env.env.env.env.ant_env.frame_skip * 0.01
-episode = next(episodes_generator)
-if 'antmaze' in exp:
-    observations = np.concatenate((episode.observations['achieved_goal'], episode.observations['observation'], episode.observations['desired_goal']), axis=1)
-else:
-    observations = np.concatenate((episode.observations['observation'], episode.observations['desired_goal']), axis=1)
+# if 'pointmaze' in exp:
+#     dt = env.env.env.env.point_env.frame_skip * 0.01
+# if 'antmaze' in exp:
+#     dt = env.env.env.env.ant_env.frame_skip * 0.01
+# episode = next(episodes_generator)
+# if 'antmaze' in exp:
+#     observations = np.concatenate((episode.observations['achieved_goal'], episode.observations['observation'], episode.observations['desired_goal']), axis=1)
+# else:
+#     observations = np.concatenate((episode.observations['observation'], episode.observations['desired_goal']), axis=1)
 
-for constraint in dynamic_constraints:
-    constraint_type, indices = constraint
-    derivative_error = observations[1:, indices[0]] - observations[:-1, indices[0]] - observations[:-1, indices[1]] * dt
-    print(f'{constraint_type} error for dimensions {indices} with dt={dt}: {np.sqrt((derivative_error**2).mean())}')
-    numerical_dt = np.median(np.abs((observations[2:, indices[0]] - observations[1:-1, indices[0]]) / observations[1:-1, indices[1]]))
-    print(f'Numerical dt for dimensions {indices}: {numerical_dt.mean()}')
+# for constraint in dynamic_constraints:
+#     constraint_type, indices = constraint
+#     derivative_error = observations[1:, indices[0]] - observations[:-1, indices[0]] - observations[:-1, indices[1]] * dt
+#     print(f'{constraint_type} error for dimensions {indices} with dt={dt}: {np.sqrt((derivative_error**2).mean())}')
+#     numerical_dt = np.median(np.abs((observations[2:, indices[0]] - observations[1:-1, indices[0]]) / observations[1:-1, indices[1]]))
+#     print(f'Numerical dt for dimensions {indices}: {numerical_dt.mean()}')
 
 final_distances = np.zeros(n_plot)
 episode_lengths = np.zeros(n_plot)
