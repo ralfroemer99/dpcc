@@ -447,14 +447,18 @@ class GaussianInvDynDiffusion(nn.Module):
         for i in reversed(range(0, self.n_timesteps)):
             timesteps = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(x, cond, timesteps, returns)
-            x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
-
+            
             # Project trajectory
-            if projector is not None:
-                if projector.only_last == False and i <= 0.5 * self.n_timesteps:
-                    x = projector(x, constraints)
-                elif projector.only_last == True and i == 0:
-                    x = projector(x, constraints)
+            # if projector is not None:
+            #     if projector.only_last == False and i <= 0.5 * self.n_timesteps:
+            #         x = projector(x, constraints)
+            #     elif projector.only_last == True and i == 0:
+            #         x = projector(x, constraints)
+
+            if projector is not None and i <= projector.diffusion_timestep_threshold * self.n_timesteps:
+                x = projector.project(x, constraints)
+            
+            x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
 
             # progress.update({'t': i})
             if return_diffusion: diffusion.append(x)

@@ -3,7 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # exp = 'pointmaze-umaze-dense-v2'
-exp = 'antmaze-umaze-v1'
+# exp = 'antmaze-umaze-v1'
+exp = 'relocate-cloned-v2'
 
 if 'pointmaze' in exp:
             obs_indices = {'x': 0, 'y': 1, 'vx': 2, 'vy': 3, 'goal_x': 4, 'goal_y': 5}
@@ -35,6 +36,8 @@ elif 'antmaze' in exp:
 
 dataset = minari.load_dataset(exp, download=True)
 env = dataset.recover_environment(render_mode='human', eval_env=True)
+
+
 # env.reset()
 # env.render()
 # for _ in range(20):
@@ -46,7 +49,7 @@ n_plot = 100
 
 episodes_generator = dataset.iterate_episodes(episode_indices=np.arange(n_plot))
 
-# Get violation
+# Get dynamic constraint violation
 # if 'pointmaze' in exp:
 #     dt = env.env.env.env.point_env.frame_skip * 0.01
 # if 'antmaze' in exp:

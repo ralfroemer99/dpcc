@@ -16,22 +16,23 @@ def solve_qp_proxsuite(i, Q_np, r_np, A, b, C, d, horizon, transition_dim):
 class Projector:
 
     def __init__(self, horizon, transition_dim, constraint_list=[], normalizer=None, dt=0.1,
-                 cost_dims=None, skip_initial_state=True, only_last=False, device='cuda', solver='proxsuite', 
-                 parallelize=False):
+                 cost_dims=None, skip_initial_state=True, only_last=False, diffusion_timestep_threshold=0.5,
+                 device='cuda', solver='proxsuite', parallelize=False):
         self.horizon = horizon
         self.transition_dim = transition_dim
         self.dt = torch.tensor(dt, device=device)
         self.skip_initial_state = skip_initial_state
-        self.only_last = only_last
+        # self.only_last = only_last
+        self.diffusion_timestep_threshold = diffusion_timestep_threshold
         self.device = device
         self.solver = solver
         self.parallelize = parallelize
         self.normalizer = normalizer
 
-        # if normalizer is not None:
-        #     if normalizer.normalizers['actions'].__class__.__name__ != 'LimitsNormalizer' or \
-        #         normalizer.normalizers['observations'].__class__.__name__ != 'LimitsNormalizer':
-        #         raise ValueError('Normalizer not supported')
+        if normalizer is not None:
+            if normalizer.normalizers['actions'].__class__.__name__ != 'LimitsNormalizer' or \
+                normalizer.normalizers['observations'].__class__.__name__ != 'LimitsNormalizer':
+                raise ValueError('Only LimitsNormalizer is supported!')
 
         if cost_dims is not None:
             costs = torch.ones(transition_dim, device=self.device) * 1e-3
@@ -73,7 +74,7 @@ class Projector:
         self.add_numpy_constraints()     
 
 
-    def __call__(self, trajectory, constraints=None):
+    def project(self, trajectory, constraints=None):
         """
             trajectory: np.ndarray of shape (batch_size, horizon, transition_dim) or (horizon, transition_dim)
             Solve an optimization problem of the form 

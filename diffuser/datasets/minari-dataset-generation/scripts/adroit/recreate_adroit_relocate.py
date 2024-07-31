@@ -4,7 +4,7 @@ import os
 import mujoco
 import numpy as np
 import gymnasium as gym
-from scripts.kitchen.utils import AdroitStepDataCallback, download_dataset_from_url
+from utils import AdroitStepDataCallback, download_dataset_from_url
 from minari import DataCollector
     
 

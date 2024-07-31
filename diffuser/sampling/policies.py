@@ -15,7 +15,7 @@ Trajectories = namedtuple('Trajectories', 'actions observations')
 
 class Policy:
 
-    def __init__(self, model, scheduler, normalizer, preprocess_fns=[], test_ret=0, projector=None, **sample_kwargs):
+    def __init__(self, model, scheduler, normalizer, preprocess_fns=[], test_ret=0, projector=None, return_diffusion=False, **sample_kwargs):
         self.model = model
         self.scheduler = scheduler,   # 'DDPM' or 'DDIM'
         self.scheduler = self.scheduler[0]      # No idea why this is needed
@@ -23,6 +23,7 @@ class Policy:
         self.action_dim = model.action_dim
         self.preprocess_fn = get_policy_preprocess_fn(preprocess_fns)
         self.test_ret = test_ret
+        self.return_diffusion = return_diffusion
         self.sample_kwargs = sample_kwargs
 
         # Inverse dynamics model
@@ -45,7 +46,10 @@ class Policy:
 
         # Use GaussianDiffusion model with DDPM
         projector = self.projector if not disable_projection else None
-        samples = self.model(conditions, returns=returns, projector=projector, constraints=constraints, **self.sample_kwargs)
+        if self.return_diffusion:
+            samples, diffusion = self.model(conditions, returns=returns, projector=projector, constraints=constraints, return_diffusion=True, **self.sample_kwargs)
+        else:
+            samples = self.model(conditions, returns=returns, projector=projector, constraints=constraints, **self.sample_kwargs)
 
         # Use UNet with variable scheduler
         # shape = (batch_size, horizon, self.model.observation_dim + self.action_dim)
@@ -69,7 +73,7 @@ class Policy:
             actions = self.inv_model(obs_comb)
             actions = utils.to_np(actions)
             actions = self.normalizer.unnormalize(actions, 'actions')
-            action = actions[0]
+            action = actions[0]     # Change this to follow "safest" trajectory
         else:
             ## extract action [ batch_size x horizon x action_dim ]
             actions = trajectories[:, :, :self.action_dim]
@@ -79,9 +83,13 @@ class Policy:
             action = actions[0, 0]
 
         ## extract observations [ batch_size x horizon x observation_dim ]
-        normed_observations = trajectories[:, :, self.action_dim:]
-        observations = self.normalizer.unnormalize(normed_observations, 'observations')
-
+        if not self.return_diffusion:
+            normed_observations = trajectories[:, :, self.action_dim:]
+            observations = self.normalizer.unnormalize(normed_observations, 'observations')
+        if self.return_diffusion:
+            diffusion_trajectories = utils.to_np(diffusion)         # Shape: batch_size x T x horizon x transition_dim     
+            observations = self.normalizer.unnormalize(diffusion_trajectories[:, :, :, self.action_dim:], 'observations')
+        
         trajectories = Trajectories(actions, observations)
 
         return action, trajectories
