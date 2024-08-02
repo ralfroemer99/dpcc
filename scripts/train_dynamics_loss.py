@@ -1,12 +1,12 @@
 import diffuser.utils as utils
-from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+from diffuser.sampling import Projector
 
 exps = [
-        # 'pointmaze-open-dense-v2',
+        'pointmaze-open-dense-v2',
         'pointmaze-umaze-dense-v2',
-        # 'pointmaze-medium-dense-v2',
-        # 'pointmaze-large-dense-v2',
-        # 'antmaze-umaze-v1',
+        'pointmaze-medium-dense-v2',
+        'pointmaze-large-dense-v2',
+        'antmaze-umaze-v1',
         # 'relocate-cloned-v2',
         ]
 
@@ -39,6 +39,51 @@ for exp in exps:
     action_dim = dataset.action_dim
     goal_dim = dataset.goal_dim
 
+
+    # -----------------------------------------------------------------------------#
+    # --------------------------- dynamics constraints ----------------------------#
+    # -----------------------------------------------------------------------------#
+
+    if 'pointmaze' in exp:
+        obs_indices = {'x': 0, 'y': 1, 'vx': 2, 'vy': 3, 'goal_x': 4, 'goal_y': 5}
+    elif 'antmaze' in exp:
+        obs_indices = {'x': 0, 'y': 1, 'z':2, 'qx': 3, 'qy': 4, 'qz': 5, 'qw': 6, 'hip1': 7, 'ankle1': 8, 'hip2': 9, 'ankle2': 10, 
+                       'hip3': 11, 'ankle3': 12, 'hip4': 13, 'ankle4': 14, 'vx': 15, 'vy': 16, 'vz': 17, 'dhip1': 21, 'dankle1': 22,
+                       'dhip2': 23, 'dankle2': 24, 'dhip3': 25, 'dankle3': 26, 'dhip4': 27, 'dankle4': 28, 'goal_x': 29, 'goal_y': 30, }
+
+    if 'pointmaze' in exp:
+        dynamic_constraints = [
+            ('deriv', [obs_indices['x'], obs_indices['vx']]),
+            ('deriv', [obs_indices['y'], obs_indices['vy']]),
+        ]
+    elif 'antmaze' in exp:
+        dynamic_constraints = [
+            ('deriv', [obs_indices['x'], obs_indices['vx']]),
+            ('deriv', [obs_indices['y'], obs_indices['vy']]),
+            ('deriv', [obs_indices['z'], obs_indices['vz']]),
+            # ('deriv', [obs_indices['hip1'], obs_indices['dhip1']]),
+            # ('deriv', [obs_indices['ankle1'], obs_indices['dankle1']]),
+            # ('deriv', [obs_indices['hip2'], obs_indices['dhip2']]),
+            # ('deriv', [obs_indices['ankle2'], obs_indices['dankle2']]),
+            # ('deriv', [obs_indices['hip3'], obs_indices['dhip3']]),
+            # ('deriv', [obs_indices['ankle3'], obs_indices['dankle3']]),
+            # ('deriv', [obs_indices['hip4'], obs_indices['dhip4']]),
+            # ('deriv', [obs_indices['ankle4'], obs_indices['dankle4']]),
+        ]
+    
+    trajectory_dim = observation_dim + action_dim if args.model == 'models.GaussianDiffusion' else observation_dim
+    dt = 0.02 if 'pointmaze' in exp else 0.05
+
+    # Create projector
+    projector = Projector(
+            horizon=args.horizon, 
+            transition_dim=trajectory_dim, 
+            constraint_list=dynamic_constraints, 
+            normalizer=dataset.normalizer, 
+            dt=dt,
+            skip_initial_state=False,
+        )
+
     # -----------------------------------------------------------------------------#
     # ------------------------------ model & trainer ------------------------------#
     # -----------------------------------------------------------------------------#
@@ -70,6 +115,8 @@ for exp in exps:
             predict_epsilon=args.predict_epsilon,
             hidden_dim=args.hidden_dim,
             ## loss weighting
+            dynamics_loss=args.dynamic_loss,
+            projector=projector,
             action_weight=args.action_weight,
             loss_discount=args.loss_discount,
             returns_condition=args.returns_condition,

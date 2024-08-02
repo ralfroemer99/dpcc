@@ -81,7 +81,7 @@ for exp in exps:
         env.env.env.env.ant_env.frame_skip = 5
 
     # Run policy
-    n_trials = 20
+    n_trials = 50
     n_timesteps = 500
     fig, ax = plt.subplots(min(n_trials, 10), 5)
 

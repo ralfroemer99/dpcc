@@ -149,22 +149,33 @@ class Trainer(object):
                         self.best_test_loss = test_loss
                         self.save_best()
                     if self.step == 0:
-                        if self.model.action_dim > 0:
-                            print(f'Initial test loss: {test_loss:8.4f}, a0 loss: {test_a0_loss:8.4f}')
-                        else:
-                            print(f'Initial test loss: {test_loss:8.4f}')
+                        # if self.model.action_dim > 0:
+                        print(f'Initial test loss: {test_loss:8.4f}, a0 loss: {test_a0_loss:8.4f}')
+                        # else:
+                            # print(f'Initial test loss: {test_loss:8.4f}')
                 self.save_losses()
             
+            # if self.train_test_split < 1:
+            #     if 'a0_loss' in infos:
+            #         logs = {"loss": loss.item(), "a0_loss": infos['a0_loss'].item(), "loss_test": test_loss, "a0_loss_test": test_a0_loss, "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
+            #     else:
+            #         logs = {"loss": loss.item(), "loss_test": test_loss, "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
+            # else:
+            #     if 'a0_loss' in infos:
+            #         logs = {"loss": loss.item(), "a0_loss": infos['a0_loss'].item(), "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
+            #     else:
+            #         logs = {"loss": loss.item(), "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
+
+            logs = {"loss": loss.item()}
+            for l in ["diffusion_loss", "dyn_loss", "a0_loss", ]:
+                if l in infos:
+                    logs[l] = infos[l].item()
             if self.train_test_split < 1:
+                logs["loss_test"] = test_loss
                 if 'a0_loss' in infos:
-                    logs = {"loss": loss.item(), "a0_loss": infos['a0_loss'].item(), "loss_test": test_loss, "a0_loss_test": test_a0_loss, "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
-                else:
-                    logs = {"loss": loss.item(), "loss_test": test_loss, "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
-            else:
-                if 'a0_loss' in infos:
-                    logs = {"loss": loss.item(), "a0_loss": infos['a0_loss'].item(), "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
-                else:
-                    logs = {"loss": loss.item(), "lr": self.lr_scheduler.get_last_lr()[0], "step": self.step}
+                    logs["a0_loss_test"] = test_a0_loss
+            logs["lr"] = self.lr_scheduler.get_last_lr()[0]
+            logs["step"] = self.step
 
             progress_bar.update(1)
             progress_bar.set_postfix(**logs)

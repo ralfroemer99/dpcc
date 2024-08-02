@@ -45,12 +45,6 @@ for exp in exps:
         trajectory_dim = diffusion.observation_dim
 
     constraint_list = []
-    
-    projector = Projector(
-        horizon=args.horizon,
-        transition_dim=trajectory_dim,
-        constraint_list=constraint_list,
-        normalizer=dataset.normalizer)
 
     # Create policy
     policy = Policy(
@@ -177,6 +171,7 @@ for exp in exps:
     if len(exps) == 1:
         plt.show()     
 
+    # Visualize denoising process of trajectories
     show_every = 2
     n_show = diffusion.n_timesteps // show_every + 1
     derivative_error = np.zeros((len(dynamic_constraints), n_show))
@@ -208,7 +203,7 @@ for exp in exps:
                     x0 = sampled_trajectories_all[trial_idx][__][:, diffusion.n_timesteps - t_show, :-1, obs_indices[constraint[1][0]]]
                     v0 = sampled_trajectories_all[trial_idx][__][:, diffusion.n_timesteps - t_show, :-1, obs_indices[constraint[1][1]]]
                     x1 = sampled_trajectories_all[trial_idx][__][:, diffusion.n_timesteps - t_show, 1:, obs_indices[constraint[1][0]]]
-                    error_curr += (x1 - x0 - v0 * dt).mean()
+                    error_curr += ((x1 - x0 - v0 * dt)**2).mean()
                     counter += 1
             derivative_errors[dim_idx, t_show] = error_curr / counter
     fig, ax = plt.subplots(len(dynamic_constraints), 1, figsize=(10, 20))

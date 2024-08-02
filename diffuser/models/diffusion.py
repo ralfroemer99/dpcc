@@ -293,8 +293,8 @@ class GaussianDiffusion(nn.Module):
 class GaussianInvDynDiffusion(nn.Module):
     def __init__(self, model, horizon, observation_dim, action_dim, goal_dim=0, n_timesteps=1000,
         loss_type='l1', clip_denoised=False, predict_epsilon=True, hidden_dim=256,
-        action_weight=1.0, loss_discount=1.0, loss_weights=None, returns_condition=False,
-        condition_guidance_w=0.1, ar_inv=False, train_only_inv=False):
+        projector=None, action_weight=1.0, loss_discount=1.0, loss_weights=None, dynamics_loss=False,
+        returns_condition=False, condition_guidance_w=0.1, ar_inv=False, train_only_inv=False):
         super().__init__()
         self.horizon = horizon
         self.observation_dim = observation_dim
@@ -302,6 +302,7 @@ class GaussianInvDynDiffusion(nn.Module):
         self.goal_dim = goal_dim
         self.transition_dim = observation_dim + action_dim
         self.model = model
+        self.projector = projector
         self.ar_inv = ar_inv
         self.train_only_inv = train_only_inv
         if self.ar_inv:
@@ -353,6 +354,13 @@ class GaussianInvDynDiffusion(nn.Module):
         ## get loss coefficients and initialize objective
         loss_weights = self.get_loss_weights(loss_discount)
         self.loss_fn = Losses['state_l2'](loss_weights)
+
+        # Dynamics loss for physics-informed diffusion
+        self.dynamics_loss = dynamics_loss
+        if dynamics_loss and projector is not None:
+            A_dyn = projector.A_dyn
+            b_dyn = projector.b_dyn
+            self.loss_fn_dynamics = Losses['dynamics_l2'](loss_weights, A_dyn, b_dyn)
 
     def get_loss_weights(self, discount):
         '''
@@ -516,6 +524,11 @@ class GaussianInvDynDiffusion(nn.Module):
         else:
             loss, info = self.loss_fn(x_recon, x_start)
 
+        if self.dynamics_loss:
+            loss_dyn, info_dyn = self.loss_fn_dynamics(x_recon, x_start)
+            loss += loss_dyn
+            info.update(info_dyn)
+
         return loss, info
 
     def loss(self, x, cond, returns=None):
@@ -550,6 +563,7 @@ class GaussianInvDynDiffusion(nn.Module):
             else:
                 pred_a_t = self.inv_model(x_comb_t)
                 inv_loss = F.mse_loss(pred_a_t, a_t)
+            info['a0_loss'] = inv_loss
 
             loss = (1 / 2) * (diffuse_loss + inv_loss)
 

@@ -12,6 +12,8 @@ args_to_watch = [
     ('horizon', 'H'),
     ('n_diffusion_steps', 'T'),
     ('returns_condition', 'R'),
+    ('predict_epsilon', 'E'),
+    ('dynamic_loss', 'DL'),
     ## value kwargs
     # ('discount', 'd'),
 ]
@@ -31,6 +33,8 @@ base = {
         'action_weight': 10,            
         'dim': 32,
         'dim_mults': (1, 2, 4, 8),
+        'predict_epsilon': False,
+        'dynamic_loss': True,
         'hidden_dim': 256,
         'attention': False,
         'condition_dropout': 0.25,
@@ -84,35 +88,16 @@ base = {
         'horizon': 8,    # 8
         'n_diffusion_steps': 20,
         'returns_condition': False,
-        'use_padding': True,
+        'predict_epsilon': False,
+        'dynamic_loss': True,
 
         ## loading
-        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}',
+        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}_E{predict_epsilon}_DL{dynamic_loss}',
         'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}',
 
         'diffusion_epoch': 'latest',      # 'latest'
 
         'verbose': False,
         'suffix': '0',
-    },
-}
-
-
-#------------------------ overrides ------------------------#
-
-halfcheetah_medium_replay_v2 = halfcheetah_medium_v2 = halfcheetah_medium_expert_v2 = {
-    'diffusion': {
-        'horizon': 4,
-        'dim_mults': (1, 4, 8),
-        'attention': True,
-    },
-    'values': {
-        'horizon': 4,
-        'dim_mults': (1, 4, 8),
-    },
-    'plan': {
-        'horizon': 4,
-        'scale': 0.001,
-        't_stopgrad': 4,
     },
 }

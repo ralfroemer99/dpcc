@@ -184,7 +184,7 @@ class WeightedLoss(nn.Module):
         loss = self._loss(pred, targ)
         weighted_loss = (loss * self.weights).mean()
         a0_loss = (loss[:, 0, :self.action_dim] / self.weights[0, :self.action_dim]).mean()
-        return weighted_loss, {'a0_loss': a0_loss}
+        return weighted_loss, {'diffusion_loss': weighted_loss, 'a0_loss': a0_loss}
     
 class WeightedStateLoss(nn.Module):
 
@@ -199,7 +199,26 @@ class WeightedStateLoss(nn.Module):
         '''
         loss = self._loss(pred, targ)
         weighted_loss = (loss * self.weights).mean()
-        return weighted_loss, {'a0_loss': weighted_loss}
+        return weighted_loss, {'diffusion_loss': weighted_loss}
+    
+class DynamicsLoss(nn.Module):
+    def __init__(self, weights, A_dyn, b_dyn):
+        super().__init__()
+        self.register_buffer('weights', weights)
+        self.A_dynT = A_dyn.t()
+        self.b_dynT = b_dyn.t()
+
+    def forward(self, pred, targ):
+        '''
+            pred, targ : tensor
+                [ batch_size x horizon x transition_dim ]
+        '''
+        pred = einops.rearrange(pred, 'b h d -> b (h d)') @ self.A_dynT 
+        # pred = pred.contiguous().view(pred.shape[0], -1) @ self.A_dynT 
+        targ = self.b_dynT
+        loss = self._loss(pred, targ).mean()
+        return loss, {'dyn_loss': loss}
+
 
 class ValueLoss(nn.Module):
     def __init__(self, *args):
@@ -240,7 +259,12 @@ class WeightedStateL2(WeightedStateLoss):
 
     def _loss(self, pred, targ):
         return F.mse_loss(pred, targ, reduction='none')
-
+    
+class WeightedDynamicsL2(DynamicsLoss):
+    
+        def _loss(self, pred, targ):
+            return F.mse_loss(pred, targ, reduction='none')
+            
 class ValueL1(ValueLoss):
 
     def _loss(self, pred, targ):
@@ -262,6 +286,7 @@ Losses = {
     'l1': WeightedL1,
     'l2': WeightedL2,
     'state_l2': WeightedStateL2,
+    'dynamics_l2': WeightedDynamicsL2,
     'value_l1': ValueL1,
     'value_l2': ValueL2,
     'cross_entropy': CrossEntropy

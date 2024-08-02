@@ -56,7 +56,7 @@ class Projector:
         self.lb = torch.empty(0, device=self.device)
         self.ub = torch.empty(0, device=self.device)
 
-        self.safety_constraints = BoxConstraints(horizon=horizon, transition_dim=transition_dim, normalizer=self.normalizer, 
+        self.safety_constraints = SafetyConstraints(horizon=horizon, transition_dim=transition_dim, normalizer=self.normalizer, 
                                                  skip_initial_state=self.skip_initial_state, device=self.device)
         self.dynamic_constraints = DynamicConstraints(horizon=horizon, transition_dim=transition_dim, normalizer=self.normalizer,
                                                       skip_initial_state=self.skip_initial_state, dt=self.dt, device=self.device)
@@ -72,7 +72,6 @@ class Projector:
         self.append_constraint(self.safety_constraints)
         self.append_constraint(self.dynamic_constraints)
         self.add_numpy_constraints()     
-
 
     def project(self, trajectory, constraints=None):
         """
@@ -101,15 +100,9 @@ class Projector:
 
         # Constraints
         if self.solver == 'qpth':
-            A = self.A
-            b = self.b
-            C = self.C
-            d = self.d
+            A, b, C, d = self.A, self.b, self.C, self.d
         else:
-            A = self.A_np
-            b = self.b_np
-            C = self.C_np
-            d = self.d_np
+            A, b, C, d = self.A_np, self.b_np, self.C_np, self.d_np
 
         if self.skip_initial_state:
             s_0 = trajectory[:self.transition_dim] if batch_size == 1 else trajectory[0, :self.transition_dim]    # Current state
@@ -148,7 +141,7 @@ class Projector:
             sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
             if self.parallelize == False:
                 qp = proxsuite.proxqp.dense.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0])
-                # qp = proxsuite.proxqp.sparse.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0])
+                # qp = proxsuite.proxqp.sparse.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0]) --> Does not work?
                 for i in range(batch_size):
                     qp.init(self.Q_np, r_np[i], A, b, C, None, d)
                     qp.solve()
@@ -166,12 +159,15 @@ class Projector:
 
         return sol
 
-
     def append_constraint(self, constraint):
         self.C = torch.cat([self.C, constraint.C], dim=0)
         self.d = torch.cat([self.d, constraint.d], dim=0)
         self.A = torch.cat([self.A, constraint.A], dim=0)
         self.b = torch.cat([self.b, constraint.b], dim=0)
+        if constraint.__class__.__name__ == 'SafetyConstraints':
+            self.A_safe, self.b_safe, self.C_safe, self.d_safe = constraint.A, constraint.b, constraint.C, constraint.d
+        elif constraint.__class__.__name__ == 'DynamicConstraints':
+            self.A_dyn, self.b_dyn, self.C_dyn, self.d_dyn = constraint.A, constraint.b, constraint.C, constraint.d
 
     def add_numpy_constraints(self):
         self.A_np = self.A.cpu().numpy()
@@ -198,7 +194,7 @@ class Constraints:
         pass
 
 
-class BoxConstraints(Constraints):
+class SafetyConstraints(Constraints):
 
     def __init__(self, skip_initial_state=True, *args, **kwargs):
         super().__init__(*args, **kwargs)
