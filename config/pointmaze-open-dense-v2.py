@@ -34,7 +34,7 @@ base = {
         'dim': 32,
         'dim_mults': (1, 2, 4, 8),
         'predict_epsilon': False,
-        'dynamic_loss': True,
+        'dynamic_loss': False,
         'hidden_dim': 256,
         'attention': False,
         'condition_dropout': 0.25,

@@ -302,7 +302,6 @@ class GaussianInvDynDiffusion(nn.Module):
         self.goal_dim = goal_dim
         self.transition_dim = observation_dim + action_dim
         self.model = model
-        self.projector = projector
         self.ar_inv = ar_inv
         self.train_only_inv = train_only_inv
         if self.ar_inv:
@@ -455,13 +454,6 @@ class GaussianInvDynDiffusion(nn.Module):
         for i in reversed(range(0, self.n_timesteps)):
             timesteps = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(x, cond, timesteps, returns)
-            
-            # Project trajectory
-            # if projector is not None:
-            #     if projector.only_last == False and i <= 0.5 * self.n_timesteps:
-            #         x = projector(x, constraints)
-            #     elif projector.only_last == True and i == 0:
-            #         x = projector(x, constraints)
 
             if projector is not None and i <= projector.diffusion_timestep_threshold * self.n_timesteps:
                 x = projector.project(x, constraints)
@@ -525,6 +517,7 @@ class GaussianInvDynDiffusion(nn.Module):
             loss, info = self.loss_fn(x_recon, x_start)
 
         if self.dynamics_loss:
+            x_recon = self.predict_start_from_noise(x_noisy, t, x_recon)
             loss_dyn, info_dyn = self.loss_fn_dynamics(x_recon, x_start)
             loss += loss_dyn
             info.update(info_dyn)

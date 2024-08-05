@@ -16,7 +16,7 @@ def solve_qp_proxsuite(i, Q_np, r_np, A, b, C, d, horizon, transition_dim):
 class Projector:
 
     def __init__(self, horizon, transition_dim, constraint_list=[], normalizer=None, dt=0.1,
-                 cost_dims=None, skip_initial_state=True, only_last=False, diffusion_timestep_threshold=0.5,
+                 cost_dims=None, skip_initial_state=True, diffusion_timestep_threshold=0.5,
                  device='cuda', solver='proxsuite', parallelize=False):
         self.horizon = horizon
         self.transition_dim = transition_dim
@@ -93,7 +93,7 @@ class Projector:
         #     trajectory = trajectory.view(-1)
         # else:      # From B x H x T to B x (HT)
         batch_size = trajectory.shape[0]
-        trajectory = trajectory.view(trajectory.shape[0], -1)
+        trajectory = trajectory.reshape(trajectory.shape[0], -1)
 
         # Cost
         r = - trajectory @ self.Q

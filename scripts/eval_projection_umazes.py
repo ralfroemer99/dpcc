@@ -11,12 +11,12 @@ from diffuser.sampling import Projector
 
 
 exps = [
-    'pointmaze-umaze-dense-v2'
-    # 'antmaze-umaze-v1',
+    # 'pointmaze-umaze-dense-v2'
+    'antmaze-umaze-v1',
     ]
 
 projection_variants = [
-    # 'none',
+    'none',
     # 'end_safe', 
     # 'full_safe', 
     'end_all', 
@@ -114,11 +114,11 @@ for exp in exps:
     if 'pointmaze' in exp:
         seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
     else:
-        seeds = [0, 1, 2, 3, 4, 5, 6, 7]                    
+        seeds = np.arange(10)                   
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
-    fig_all, ax_all = plt.subplots(min(n_trials, 5), len(projection_variants), figsize=(20, 20))
+    fig_all, ax_all = plt.subplots(min(n_trials, 10), len(projection_variants), figsize=(20, 20))
     ax_limits = [-1.5, 1.5] if 'pointmaze' in exp else [-6, 6]
 
     for variant_idx, variant in enumerate(projection_variants):
@@ -131,14 +131,14 @@ for exp in exps:
             projector = None
         else:
             constraint_list = constraint_list_safe if 'safe' in variant else constraint_list_safe_dyn
-            only_last = True if 'end' in variant else False
+            diffusion_timestep_threshold = 0.5 if 'full' in variant else 0
             dt = 0.02 if 'pointmaze' in exp else 0.05
             projector = Projector(
                 horizon=args.horizon, 
                 transition_dim=trajectory_dim, 
                 constraint_list=constraint_list, 
                 normalizer=dataset.normalizer, 
-                only_last=only_last, 
+                diffusion_timestep_threshold=diffusion_timestep_threshold,
                 dt=dt,
                 cost_dims=cost_dims,
             )
@@ -245,7 +245,7 @@ for exp in exps:
 
             sampled_trajectories_all.append(sampled_trajectories)
 
-            if i >= 5:     # Plot only the first 10 trials
+            if i >= 10:     # Plot only the first 10 trials
                 continue
             plot_states = ['x', 'y', 'vx', 'vy']
 

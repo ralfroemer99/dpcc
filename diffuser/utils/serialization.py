@@ -49,6 +49,8 @@ def load_losses(*loadpath):
         return None
 
 def load_diffusion(*loadpath, epoch='latest', device='cuda:0', seed=None):
+    print(f'\n[ utils/serialization ] Loading model from {os.path.join(*loadpath)}\n')
+
     dataset_config = load_config(*loadpath, 'dataset_config.pkl')
     model_config = load_config(*loadpath, 'model_config.pkl')
     diffusion_config = load_config(*loadpath, 'diffusion_config.pkl')

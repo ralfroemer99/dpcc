@@ -33,7 +33,7 @@ base = {
         'action_weight': 10,            
         'dim': 32,
         'dim_mults': (1, 2, 4, 8),
-        'predict_epsilon': False,
+        'predict_epsilon': True,
         'dynamic_loss': True,
         'hidden_dim': 256,
         'attention': False,
@@ -88,8 +88,8 @@ base = {
         'horizon': 8,
         'n_diffusion_steps': 20,
         'returns_condition': False,
-        'predict_epsilon': False,
-        'dynamic_loss': True,
+        'predict_epsilon': True,
+        'dynamic_loss': False,
 
         ## loading
         'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}_E{predict_epsilon}_DL{dynamic_loss}',
