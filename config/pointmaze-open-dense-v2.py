@@ -95,7 +95,7 @@ base = {
         'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}_E{predict_epsilon}_DL{dynamic_loss}',
         'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}',
 
-        'diffusion_epoch': 'latest',      # 'latest'
+        'diffusion_epoch': 'best',      # 'latest'
 
         'verbose': False,
         'suffix': '0',

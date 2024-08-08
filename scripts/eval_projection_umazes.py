@@ -16,14 +16,19 @@ exps = [
     ]
 
 projection_variants = [
-    # 'none',
-    # 'select',
-    # 'end_safe', 
-    # 'mid_safe',
-    # 'full_safe',
-    # 'end_all', 
-    'mid_all',
-    # 'full_all',
+    'none',
+    'end_safe',     # Projected generative diffusion models
+    # '0p1_safe',
+    # '0p2_safe',
+    'full_safe',
+    'end_all', 
+    'end_all_cost',
+    '0p1_all',
+    '0p1_all_cost',
+    # '0p2_all',
+    # '0p2_all_cost',
+    'full_all',
+    'full_all_cost',
     ]
 
 for exp in exps:
@@ -75,8 +80,10 @@ for exp in exps:
             # [[6, 1], [1, 6], 'below'],
             # [[1.5, -6], [6, -1.5], 'above'],
             # [[6, 1.5], [1.5, 6], 'below'],
-            [[2, -6], [6, -2], 'above'],
-            [[6, 2], [2, 6], 'below'],
+            [[1.75, -6], [6, -1.75], 'above'],
+            [[6, 1.75], [1.75, 6], 'below'],
+            # [[2, -6], [6, -2], 'above'],
+            # [[6, 2], [2, 6], 'below'],
             ]
         
     constraint_list_safe = []
@@ -142,7 +149,7 @@ for exp in exps:
     if 'pointmaze' in exp:
         seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
     else:
-        seeds = np.arange(50)                   
+        seeds = np.arange(2)                   
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
@@ -158,8 +165,10 @@ for exp in exps:
             constraint_list = constraint_list_safe_enlarged if 'safe' in variant else constraint_list
             if 'full' in variant:
                 diffusion_timestep_threshold = 1
-            elif 'mid' in variant:
+            elif '0p1' in variant:
                 diffusion_timestep_threshold = 0.1
+            elif '0p2' in variant:
+                diffusion_timestep_threshold = 0.2
             else:
                 diffusion_timestep_threshold = 0
             dt = 0.02 if 'pointmaze' in exp else 0.05
@@ -174,6 +183,7 @@ for exp in exps:
             )
 
         # Create policy
+        return_costs = 'cost' in variant
         policy = Policy(
             model=diffusion,
             scheduler=scheduler,
@@ -182,7 +192,7 @@ for exp in exps:
             test_ret=args.test_ret,
             projector=projector,
             # **sample_kwargs
-            return_costs=True,
+            return_costs=return_costs,
         )    
 
         if 'pointmaze' in exp:

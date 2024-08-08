@@ -86,7 +86,7 @@ base = {
 
         ## diffusion model
         'horizon': 16,
-        'n_diffusion_steps': 20,
+        'n_diffusion_steps': 50,
         'returns_condition': False,
         'predict_epsilon': False,
         'dynamic_loss': True,
@@ -95,7 +95,7 @@ base = {
         'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}',
         'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}',
 
-        'diffusion_epoch': 'latest',      # 'latest'
+        'diffusion_epoch': 'best',      # 'latest'
 
         'verbose': False,
         'suffix': '0',

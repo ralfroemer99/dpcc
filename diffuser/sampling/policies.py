@@ -75,7 +75,7 @@ class Policy:
             actions = self.inv_model(obs_comb)
             actions = utils.to_np(actions)
             actions = self.normalizer.unnormalize(actions, 'actions')
-            if not 'projection_costs' in infos:
+            if not 'projection_costs' in infos or infos['projection_costs'] == {}:
                 action = actions[0]     # Change this to follow "safest" trajectory
             else:
                 costs_total = np.zeros(batch_size)
