@@ -400,7 +400,7 @@ class GaussianInvDynDiffusion(nn.Module):
         else:
             return noise
 
-    def q_posterior(self, x_start, x_t, t):
+    def q_posterior(self, x_start, x_t, t):     # q(x_{t-1} | x_t, x_0)
         posterior_mean = (
             extract(self.posterior_mean_coef1, t, x_t.shape) * x_start +
             extract(self.posterior_mean_coef2, t, x_t.shape) * x_t

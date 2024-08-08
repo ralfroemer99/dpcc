@@ -81,7 +81,7 @@ for exp in exps:
         env.env.env.env.ant_env.frame_skip = 5
 
     # Run policy
-    n_trials = 50
+    n_trials = 10
     n_timesteps = 500
     fig, ax = plt.subplots(min(n_trials, 10), 5)
 
@@ -100,7 +100,7 @@ for exp in exps:
     n_steps = 0
     avg_time = np.zeros(n_trials)
     for i in range(n_trials):
-        obs, _ = env.reset(seed=i)
+        obs, _ = env.reset(seed=i+50)
         if 'antmaze' in exp:
             obs = np.concatenate((obs['achieved_goal'], obs['observation'], obs['desired_goal']))
         else:

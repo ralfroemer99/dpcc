@@ -12,8 +12,8 @@ args_to_watch = [
     ('horizon', 'H'),
     ('n_diffusion_steps', 'T'),
     ('returns_condition', 'R'),
-    ('predict_epsilon', 'E'),
-    ('dynamic_loss', 'DL'),
+    # ('predict_epsilon', 'E'),
+    # ('dynamic_loss', 'DL'),
     ## value kwargs
     # ('discount', 'd'),
 ]
@@ -92,7 +92,7 @@ base = {
         'dynamic_loss': False,
 
         ## loading
-        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}_E{predict_epsilon}_DL{dynamic_loss}',
+        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}',
         'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}',
 
         'diffusion_epoch': 'latest',      # 'latest'

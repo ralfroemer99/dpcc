@@ -1,4 +1,5 @@
 import time
+import torch
 from copy import copy
 import minari
 import numpy as np
@@ -9,7 +10,6 @@ from diffuser.sampling import Policy
 from diffusers import DDPMScheduler, DDIMScheduler
 from diffuser.sampling import Projector
 
-
 exp = 'antmaze-umaze-v1'
 
 dynamics_constraints_variants = [
@@ -17,7 +17,7 @@ dynamics_constraints_variants = [
     # 'pos_legs',
     ]
 
-diffusion_timestep_thresholds = [-1, 0, 0.2, 0.4, 0.6, 0.8, 1]
+diffusion_timestep_thresholds = [-1, 0, 0.05, 0.1, 0.15, 0.2, 0.25]
 
 class Parser(utils.Parser):
     dataset: str = exp
@@ -94,10 +94,10 @@ for dynamic_constraint_variant in dynamics_constraints_variants:
     for constraint in dynamic_constraints:
         constraint_list.append(constraint)               
 
-    n_trials = 10
+    n_trials = 50                 
     n_timesteps = 300
 
-    fig_all, ax_all = plt.subplots(min(n_trials, 5), len(diffusion_timestep_thresholds), figsize=(20, 20))
+    fig_all, ax_all = plt.subplots(min(n_trials, 10), len(diffusion_timestep_thresholds), figsize=(20, 20))
     fig_all.suptitle(f'{exp} - dyn. const. {dynamic_constraint_variant}')
     ax_limits = [-6, 6]
 
@@ -139,13 +139,13 @@ for dynamic_constraint_variant in dynamics_constraints_variants:
 
         # Store a few sampled trajectories
         sampled_trajectories_all = []
-
         n_success = 0
         n_steps = 0
         n_violations = 0
         total_violations = 0
         avg_time = np.zeros(n_trials)
         for i in range(n_trials):
+            torch.manual_seed(i)
             obs, _ = env.reset(seed=i)
             obs = np.concatenate((obs['achieved_goal'], obs['observation'], obs['desired_goal']))
             obs_buffer = []
@@ -153,21 +153,20 @@ for dynamic_constraint_variant in dynamics_constraints_variants:
 
             sampled_trajectories = []
             disable_projection = True
-            n_violations_curr = 0
-            total_violations_curr = 0
             for _ in range(n_timesteps):
-                start = time.time()
                 conditions = {0: obs}
 
                 # Check if a safety constraint is violated
                 for constraint in constraint_list_safe:
                     c, d = constraint[1]
                     if obs @ c >= d + 1e-2:   # (Close to) Violation of constraint
-                        n_violations_curr += 1
-                        total_violations_curr += obs @ c - d
+                        n_violations += 1
+                        total_violations += obs @ c - d
                         break
                 
+                start = time.time()
                 action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection)
+                avg_time[i] += time.time() - start
 
                 # Check whether one of the sampled trajectories violates a 
                 disable_projection = True
@@ -182,8 +181,6 @@ for dynamic_constraint_variant in dynamics_constraints_variants:
                     sampled_trajectories.append(samples.observations[:, :, :])
 
                 obs, rew, terminated, truncated, info = env.step(action)
-
-                avg_time[i] += time.time() - start
 
                 dist_to_goal = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
                 obs = np.concatenate((obs['achieved_goal'], obs['observation'], obs['desired_goal']))
@@ -200,20 +197,14 @@ for dynamic_constraint_variant in dynamics_constraints_variants:
                 action_buffer.append(action)
                 if info['success']:
                     n_success += 1
+                if info['success'] or terminated or truncated or _ == n_timesteps - 1:
                     n_steps += _
-                    n_violations += n_violations_curr
-                    total_violations += total_violations_curr
-                    # print(f'Trial {i} succeeded in {_} steps')
-                    avg_time[i] /= _
-                    break
-                if terminated or truncated or _ == n_timesteps - 1:
-                    # print(f'Trial {i} terminated in {_} steps')
                     avg_time[i] /= _
                     break
 
             sampled_trajectories_all.append(sampled_trajectories)
 
-            if i >= 5:     # Plot only the first 5 trials
+            if i >= 10:     # Plot only the first 5 trials
                 continue
             plot_states = ['x', 'y', 'vx', 'vy']
 
@@ -258,9 +249,9 @@ for dynamic_constraint_variant in dynamics_constraints_variants:
 
         print(f'Success rate: {n_success / n_trials}')
         if n_success > 0:
-            print(f'Avg number of steps in successful episodes: {n_steps / n_success}')
-            print(f'Avg number of constraint violations in successful episodes: {n_violations / n_success}')
-            print(f'Avg constraint violation per timestep in successful episodes: {total_violations / n_steps}')
+            print(f'Avg number of steps: {n_steps / n_trials}')
+            print(f'Avg number of constraint violations: {n_violations / n_trials}')
+            print(f'Avg total violation: {total_violations / n_trials}')
         print(f'Average computation time per step: {np.mean(avg_time)}')
 
         fig.savefig(f'{args.savepath}/diff_timestep_th/dyn_const_{dynamic_constraint_variant}_th_{diff_timestep_threshold}.png')   

@@ -1,4 +1,5 @@
 import time
+import torch
 from copy import copy
 import minari
 import numpy as np
@@ -9,7 +10,6 @@ from diffuser.sampling import Policy
 from diffusers import DDPMScheduler, DDIMScheduler
 from diffuser.sampling import Projector
 
-
 exps = [
     # 'pointmaze-umaze-dense-v2'
     'antmaze-umaze-v1',
@@ -17,9 +17,15 @@ exps = [
 
 projection_variants = [
     'none',
-    # 'end_safe', 
-    # 'full_safe', 
+    'end_safe', 
+    '3quarter_safe',
+    'half_safe',
+    '1quarter_safe',
+    'full_safe',
     'end_all', 
+    '3quarter_all',
+    'half_all',
+    '1quarter_all',
     'full_all',
     ]
 
@@ -38,7 +44,9 @@ for exp in exps:
     diffusion_losses = diffusion_experiment.losses
     diffusion = diffusion_experiment.diffusion
     dataset = diffusion_experiment.dataset
-    trainer = diffusion_experiment.trainer
+
+    minari_dataset = minari.load_dataset(exp, download=True)
+    env = minari_dataset.recover_environment(eval_env=True) if 'pointmaze' in exp else minari_dataset.recover_environment()    # Set render_mode='human' to visualize the environment
 
     # Create scheduler
     scheduler = DDIMScheduler(num_train_timesteps=diffusion.n_timesteps)   
@@ -66,15 +74,14 @@ for exp in exps:
             ]
     else:
         safety_constraints = [
-            # [[1, -6], [6, -1], 'above'],
-            # [[6, 1], [1, 6], 'below'],
-            [[1.5, -6], [6, -1.5], 'above'],
-            [[6, 1.5], [1.5, 6], 'below'],
+            [[1, -6], [6, -1], 'above'],
+            [[6, 1], [1, 6], 'below'],
+            # [[1.5, -6], [6, -1.5], 'above'],
+            # [[6, 1.5], [1.5, 6], 'below'],
             ]
     
     constraint_list_safe = []
-    constraint_points = safety_constraints
-    for constraint in constraint_points:
+    for constraint in safety_constraints:
         m = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
         d = constraint[0][1] - m * constraint[0][0]
         C_row = np.zeros(trajectory_dim)
@@ -87,7 +94,7 @@ for exp in exps:
             d *= -1
         constraint_list_safe.append(('ineq', (C_row, d)))
 
-    constraint_list_safe_dyn = copy(constraint_list_safe)   
+    constraint_list = copy(constraint_list_safe)   
     if 'pointmaze' in exp:
         dynamic_constraints = [
             ('deriv', [obs_indices['x'], obs_indices['vx']]),
@@ -109,12 +116,12 @@ for exp in exps:
         ]
 
     for constraint in dynamic_constraints:
-        constraint_list_safe_dyn.append(constraint)
+        constraint_list.append(constraint)
 
     if 'pointmaze' in exp:
         seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
     else:
-        seeds = np.arange(10)                   
+        seeds = np.arange(50)                   
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
@@ -124,14 +131,20 @@ for exp in exps:
     for variant_idx, variant in enumerate(projection_variants):
         print(f'------------------------Running {exp} - {variant}----------------------------')
 
-        minari_dataset = minari.load_dataset(exp, download=True)
-        env = minari_dataset.recover_environment(eval_env=True) if 'pointmaze' in exp else minari_dataset.recover_environment()    # Set render_mode='human' to visualize the environment
-
         if variant == 'none':
             projector = None
         else:
-            constraint_list = constraint_list_safe if 'safe' in variant else constraint_list_safe_dyn
-            diffusion_timestep_threshold = 0.5 if 'full' in variant else 0
+            constraint_list = constraint_list_safe if 'safe' in variant else constraint_list
+            if 'full' in variant:
+                diffusion_timestep_threshold = 1
+            elif '3quarter' in variant:
+                diffusion_timestep_threshold = 0.75
+            elif 'half' in variant:
+                diffusion_timestep_threshold = 0.5
+            elif '1quarter' in variant:
+                diffusion_timestep_threshold = 0.25
+            else:
+                diffusion_timestep_threshold = 0
             dt = 0.02 if 'pointmaze' in exp else 0.05
             projector = Projector(
                 horizon=args.horizon, 
@@ -167,12 +180,13 @@ for exp in exps:
 
         # Store a few sampled trajectories
         sampled_trajectories_all = []
-
         n_success = 0
         n_steps = 0
         n_violations = 0
+        total_violations = 0
         avg_time = np.zeros(n_trials)
         for i in range(n_trials):
+            torch.manual_seed(i)
             seed = seeds[i] if ('pointmaze-umaze' in exp) else i
             obs, _ = env.reset(seed=seed)
             if 'antmaze' in exp:
@@ -184,19 +198,20 @@ for exp in exps:
 
             sampled_trajectories = []
             disable_projection = True
-            n_violations_curr = 0
             for _ in range(n_timesteps):
-                start = time.time()
                 conditions = {0: obs}
 
                 # Check if a safety constraint is violated
                 for constraint in constraint_list_safe:
                     c, d = constraint[1]
-                    if obs @ c >= d + 1e-2:   # (Close to) Violation of constraint
-                        n_violations_curr += 1
+                    if obs @ c >= d + 1e-3:   # (Close to) Violation of constraint
+                        n_violations += 1
+                        total_violations += obs @ c - d
                         break
                 
+                start = time.time()
                 action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection)
+                avg_time[i] += time.time() - start
 
                 # Check whether one of the sampled trajectories violates a 
                 disable_projection = True
@@ -211,9 +226,6 @@ for exp in exps:
                     sampled_trajectories.append(samples.observations[:, :, :])
 
                 obs, rew, terminated, truncated, info = env.step(action)
-
-                avg_time[i] += time.time() - start
-
                 dist_to_goal = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
                 if 'antmaze' in exp:
                     obs = np.concatenate((obs['achieved_goal'], obs['observation'], obs['desired_goal']))
@@ -233,13 +245,8 @@ for exp in exps:
                 action_buffer.append(action)
                 if info['success']:
                     n_success += 1
+                if info['success'] or terminated or truncated or _ == n_timesteps - 1:
                     n_steps += _
-                    n_violations += n_violations_curr
-                    # print(f'Trial {i} succeeded in {_} steps')
-                    avg_time[i] /= _
-                    break
-                if terminated or truncated or _ == n_timesteps - 1:
-                    # print(f'Trial {i} terminated in {_} steps')
                     avg_time[i] /= _
                     break
 
@@ -285,7 +292,7 @@ for exp in exps:
                 else:
                     curr_ax.add_patch(matplotlib.patches.Rectangle((-6, -2), 8, 4, color='k', alpha=0.2))
 
-                for constraint in constraint_points:
+                for constraint in safety_constraints:
                     mat = np.zeros((3, 2))
                     mat[:2] = constraint[:2]
                     if 'pointmaze' in exp:
@@ -296,8 +303,9 @@ for exp in exps:
 
         print(f'Success rate: {n_success / n_trials}')
         if n_success > 0:
-            print(f'Avg number of steps in successful episodes: {n_steps / n_success}')
-            print(f'Avg number of constraint violations in successful episodes: {n_violations / n_success}')
+            print(f'Avg number of steps: {n_steps / n_trials}')
+            print(f'Avg number of constraint violations: {n_violations / n_trials}')
+            print(f'Avg total violation: {total_violations / n_trials}')
         print(f'Average computation time per step: {np.mean(avg_time)}')
 
         fig.savefig(f'{args.savepath}/{variant}.png')   

@@ -3,8 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # exp = 'pointmaze-umaze-dense-v2'
-# exp = 'antmaze-umaze-v1'
-exp = 'relocate-cloned-v2'
+exp = 'antmaze-umaze-v1'
+# exp = 'relocate-cloned-v2'
 
 if 'pointmaze' in exp:
             obs_indices = {'x': 0, 'y': 1, 'vx': 2, 'vy': 3, 'goal_x': 4, 'goal_y': 5}
@@ -37,7 +37,6 @@ elif 'antmaze' in exp:
 dataset = minari.load_dataset(exp, download=True)
 env = dataset.recover_environment(render_mode='human', eval_env=True)
 
-
 # env.reset()
 # env.render()
 # for _ in range(20):
@@ -54,18 +53,6 @@ if 'pointmaze' in exp:
     dt = env.env.env.env.point_env.frame_skip * 0.01
 if 'antmaze' in exp:
     dt = env.env.env.env.ant_env.frame_skip * 0.01
-episode = next(episodes_generator)
-if 'antmaze' in exp:
-    observations = np.concatenate((episode.observations['achieved_goal'], episode.observations['observation'], episode.observations['desired_goal']), axis=1)
-else:
-    observations = np.concatenate((episode.observations['observation'], episode.observations['desired_goal']), axis=1)
-
-for constraint in dynamic_constraints:
-    constraint_type, indices = constraint
-    derivative_error = observations[1:, indices[0]] - observations[:-1, indices[0]] - observations[:-1, indices[1]] * dt
-    print(f'{constraint_type} error for dimensions {indices} with dt={dt}: {np.sqrt((derivative_error**2).mean())}')
-    numerical_dt = np.median(np.abs((observations[2:, indices[0]] - observations[1:-1, indices[0]]) / observations[1:-1, indices[1]]))
-    print(f'Numerical dt for dimensions {indices}: {numerical_dt.mean()}')
 
 final_distances = np.zeros(n_plot)
 episode_lengths = np.zeros(n_plot)
@@ -79,6 +66,20 @@ for i in range(n_plot):
         observations = np.concatenate((episode.observations['achieved_goal'], episode.observations['observation'], episode.observations['desired_goal']), axis=1)
     else:
         observations = np.concatenate((episode.observations['observation'], episode.observations['desired_goal']), axis=1)
+
+    if i <= 2:
+        fig, ax = plt.subplots(1, 1)
+        derivative_errors = np.zeros((len(dynamic_constraints)))
+        for idx, constraint in enumerate(dynamic_constraints):
+            constraint_type, indices = constraint
+            derivative_error = observations[1:, indices[0]] - observations[:-1, indices[0]] - observations[:-1, indices[1]] * dt
+            derivative_errors[idx] = np.sqrt((derivative_error**2).mean())
+            print(f'{constraint_type} error for dimensions {indices} with dt={dt}: {np.sqrt((derivative_errors[idx]**2).mean())}')
+            numerical_dt = np.median(np.abs((observations[2:, indices[0]] - observations[1:-1, indices[0]]) / observations[1:-1, indices[1]]))
+            print(f'Numerical dt for dimensions {indices}: {numerical_dt.mean()}')
+        ax.plot(derivative_errors)
+        ax.set_ylim([0, 0.1])
+        plt.show()
 
     # observations = np.concatenate([episode.observations[key] for key in episode.observations])
     actions = episode.actions
