@@ -441,7 +441,7 @@ class GaussianInvDynDiffusion(nn.Module):
         return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False, projector=None, constraints=None):
+    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False, return_costs=False, projector=None, constraints=None):
         device = self.betas.device
 
         batch_size = shape[0]
@@ -449,6 +449,7 @@ class GaussianInvDynDiffusion(nn.Module):
         x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
 
         if return_diffusion: diffusion = [x]
+        if return_costs: costs = {}
 
         # progress = utils.Progress(self.n_timesteps) if verbose else utils.Silent()
         for i in reversed(range(0, self.n_timesteps)):
@@ -456,18 +457,23 @@ class GaussianInvDynDiffusion(nn.Module):
             x = self.p_sample(x, cond, timesteps, returns)
 
             if projector is not None and i <= projector.diffusion_timestep_threshold * self.n_timesteps:
-                x = projector.project(x, constraints)
+                if return_costs:
+                    x, projection_costs = projector.project(x, constraints, return_costs=return_costs)
+                    if return_costs: costs[i] = projection_costs
+                else:
+                    x = projector.project(x, constraints)
             
             x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
 
             # progress.update({'t': i})
             if return_diffusion: diffusion.append(x)
+            
 
-        # progress.close()
-        if return_diffusion:
-            return x, torch.stack(diffusion, dim=1)
-        else:
-            return x
+        infos = {}
+        if return_diffusion: infos['diffusion'] = diffusion
+        if return_costs: infos['projection_costs'] = costs
+
+        return x, infos
 
     @torch.no_grad()
     def conditional_sample(self, cond, returns=None, horizon=None, *args, **kwargs):

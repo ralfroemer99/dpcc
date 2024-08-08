@@ -73,7 +73,7 @@ class Projector:
         self.append_constraint(self.dynamic_constraints)
         self.add_numpy_constraints()     
 
-    def project(self, trajectory, constraints=None):
+    def project(self, trajectory, constraints=None, return_costs=False):
         """
             trajectory: np.ndarray of shape (batch_size, horizon, transition_dim) or (horizon, transition_dim)
             Solve an optimization problem of the form 
@@ -97,6 +97,7 @@ class Projector:
 
         # Cost
         r = - trajectory @ self.Q
+        trajectory_np = trajectory.cpu().numpy()
 
         # Constraints
         if self.solver == 'qpth':
@@ -139,6 +140,7 @@ class Projector:
             # Solve optimization problem with proxsuite solver
             r_np = r.cpu().numpy()
             sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
+            projection_costs = np.ones(batch_size, dtype=np.float32)
             if self.parallelize == False:
                 qp = proxsuite.proxqp.dense.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0])
                 # qp = proxsuite.proxqp.sparse.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0]) --> Does not work?
@@ -146,6 +148,7 @@ class Projector:
                     qp.init(self.Q_np, r_np[i], A, b, C, None, d)
                     qp.solve()
                     sol_np[i] = qp.results.x
+                    projection_costs[i] = 0.5 * qp.results.x @ self.Q_np @ qp.results.x + r_np[i] @ qp.results.x + 0.5 * trajectory_np[i] @ self.Q_np @ trajectory_np[i]
             else:
                 with ThreadPoolExecutor() as executor:
                     results = list(executor.map(solve_qp_proxsuite, range(batch_size), [self.Q_np]*batch_size, [r_np]*batch_size, [A]*batch_size, [b]*batch_size, 
@@ -156,8 +159,10 @@ class Projector:
             sol = torch.tensor(sol_np, device=self.device).reshape(dims)
 
         # print(f'Projection time {self.solver}:', time.time() - start_time)
-
-        return sol
+        if return_costs:
+            return sol, projection_costs
+        else:
+            return sol
 
     def append_constraint(self, constraint):
         self.C = torch.cat([self.C, constraint.C], dim=0)
