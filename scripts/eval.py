@@ -66,13 +66,12 @@ for exp in exps:
     )    
 
     # Plot losses
-    fig, ax = plt.subplots(1, 2, figsize=(10, 5))
-    utils.plot_losses(diffusion_losses, ax=ax[0], title='Diffusion losses')
-    if len(exps) == 1:
-        plt.show()
+    # fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+    # utils.plot_losses(diffusion_losses, ax=ax[0], title='Diffusion losses')
+    # if len(exps) == 1:
+    #     plt.show()
 
     dataset = minari.load_dataset(exp, download=True)
-    # env = dataset.recover_environment(eval_env=True)     # Set render_mode='human' to visualize the environment
     env = dataset.recover_environment(eval_env=True) if 'pointmaze' in exp else dataset.recover_environment()     # Set render_mode='human' to visualize the environment
 
     if 'pointmaze' in exp:
@@ -99,6 +98,7 @@ for exp in exps:
     n_success = 0
     n_steps = 0
     avg_time = np.zeros(n_trials)
+    pos_tracking_errors = np.zeros((n_trials, n_timesteps - 1))
     for i in range(n_trials):
         obs, _ = env.reset(seed=i+50)
         if 'antmaze' in exp:
@@ -115,16 +115,12 @@ for exp in exps:
             start = time.time()
             conditions = {0: obs}
             
-            # if _ % action_update_every == 0:
             action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon)
-            # action = env.action_space.sample()
-            # prev_action = action
-            # update_counter = 1
+            if _ >= 1:
+                pos_tracking_errors[i, _-1] = np.linalg.norm(obs[obs_indices['x']:obs_indices['y']+1] - desired_next_pos)
+            desired_next_pos = samples.observations[0, 1, [obs_indices['x'], obs_indices['y']]]
             if _ % save_samples_every == 0:
                 sampled_trajectories.append(samples.observations[:, :, :])
-            # else:
-                # action = prev_action
-                # update_counter += 1
 
             obs, rew, terminated, truncated, info = env.step(action)
 
@@ -184,6 +180,8 @@ for exp in exps:
     if n_success > 0:
         print(f'Average number of steps in successes: {n_steps / n_success}')
     print(f'Average computation time per step: {np.mean(avg_time)}')
+    print(f'Maximum tracking error: {np.max(pos_tracking_errors)}')
+    print(f'Mean tracking error: {np.mean(pos_tracking_errors[pos_tracking_errors > 0])}')
     
     fig.savefig(f'logs/last_plot.png')
     if len(exps) == 1:

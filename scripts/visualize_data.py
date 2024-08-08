@@ -1,5 +1,6 @@
 import minari
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 
 # exp = 'pointmaze-umaze-dense-v2'
@@ -33,6 +34,20 @@ elif 'antmaze' in exp:
         ('deriv', [obs_indices['ankle4'], obs_indices['dankle4']]),
     ]
 
+if 'pointmaze' in exp:
+    safety_constraints = [
+        [[0.25, -1.5], [1.5, -0.25], 'above'],
+        [[1.5, 0.25], [0.25, 1.5], 'below'],
+        ]
+else:
+    safety_constraints = [
+        # [[1, -6], [6, -1], 'above'],
+        # [[6, 1], [1, 6], 'below'],
+        # [[1.5, -6], [6, -1.5], 'above'],
+        # [[6, 1.5], [1.5, 6], 'below'],
+        [[2, -6], [6, -2], 'above'],
+        [[6, 2], [2, 6], 'below'],
+        ]
 
 dataset = minari.load_dataset(exp, download=True)
 env = dataset.recover_environment(render_mode='human', eval_env=True)
@@ -79,7 +94,7 @@ for i in range(n_plot):
             print(f'Numerical dt for dimensions {indices}: {numerical_dt.mean()}')
         ax.plot(derivative_errors)
         ax.set_ylim([0, 0.1])
-        plt.show()
+        # plt.show()
 
     # observations = np.concatenate([episode.observations[key] for key in episode.observations])
     actions = episode.actions
@@ -94,6 +109,14 @@ for i in range(n_plot):
 
 
     ax2[0].plot(observations[:, obs_indices['x']], observations[:, obs_indices['y']])
+    for constraint in safety_constraints:
+        mat = np.zeros((3, 2))
+        mat[:2] = constraint[:2]
+        if 'pointmaze' in exp:
+            mat[2] = np.array([1.5, -1.5]) if constraint[2] == 'above' else np.array([1.5, 1.5])
+        elif 'antmaze' in exp:
+            mat[2] = np.array([6, -6]) if constraint[2] == 'above' else np.array([6, 6])
+        ax2[0].add_patch(matplotlib.patches.Polygon(mat, color='c', alpha=0.2))
     ax2[1].plot(observations[0, obs_indices['x']], observations[0, obs_indices['y']], 'go')       # Start
     ax2[1].plot(observations[1, obs_indices['goal_x']], observations[1, obs_indices['goal_y']], 'ro')       # Goal
 

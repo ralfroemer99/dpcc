@@ -17,16 +17,13 @@ exps = [
 
 projection_variants = [
     'none',
-    'end_safe', 
-    '3quarter_safe',
-    'half_safe',
-    '1quarter_safe',
-    'full_safe',
-    'end_all', 
-    '3quarter_all',
-    'half_all',
-    '1quarter_all',
-    'full_all',
+    'select',
+    # 'end_safe', 
+    # 'mid_safe',
+    # 'full_safe',
+    # 'end_all', 
+    'mid_all',
+    # 'full_all',
     ]
 
 for exp in exps:
@@ -74,12 +71,14 @@ for exp in exps:
             ]
     else:
         safety_constraints = [
-            [[1, -6], [6, -1], 'above'],
-            [[6, 1], [1, 6], 'below'],
+            # [[1, -6], [6, -1], 'above'],
+            # [[6, 1], [1, 6], 'below'],
             # [[1.5, -6], [6, -1.5], 'above'],
             # [[6, 1.5], [1.5, 6], 'below'],
+            [[2, -6], [6, -2], 'above'],
+            [[6, 2], [2, 6], 'below'],
             ]
-    
+        
     constraint_list_safe = []
     for constraint in safety_constraints:
         m = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
@@ -93,8 +92,30 @@ for exp in exps:
             C_row[obs_indices['y']] = -1
             d *= -1
         constraint_list_safe.append(('ineq', (C_row, d)))
+        
+    # Enlarge safety constraints by tracking error
+    tracking_error_bound = 0.25 if 'antmaze' in exp else 0.12
+    safety_constraints_enlarged = []
+    for constraint in safety_constraints:
+        m = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
+        n = [-1, 1/m] / np.linalg.norm([-1, 1/m])
+        safety_constraints_enlarged.append([constraint[0] + tracking_error_bound * n, constraint[1] + tracking_error_bound * n, constraint[2]])
+    
+    constraint_list_safe_enlarged = []
+    for constraint in safety_constraints_enlarged:
+        m = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
+        d = constraint[0][1] - m * constraint[0][0]
+        C_row = np.zeros(trajectory_dim)
+        if constraint[2] == 'below':
+            C_row[obs_indices['x']] = -m
+            C_row[obs_indices['y']] = 1
+        elif constraint[2] == 'above':
+            C_row[obs_indices['x']] = m
+            C_row[obs_indices['y']] = -1
+            d *= -1
+        constraint_list_safe_enlarged.append(('ineq', (C_row, d)))
 
-    constraint_list = copy(constraint_list_safe)   
+    constraint_list = copy(constraint_list_safe_enlarged)   # or copy(constraint_list_safe) to not enlarge the constraints
     if 'pointmaze' in exp:
         dynamic_constraints = [
             ('deriv', [obs_indices['x'], obs_indices['vx']]),
@@ -134,15 +155,11 @@ for exp in exps:
         if variant == 'none':
             projector = None
         else:
-            constraint_list = constraint_list_safe if 'safe' in variant else constraint_list
+            constraint_list = constraint_list_safe_enlarged if 'safe' in variant else constraint_list
             if 'full' in variant:
                 diffusion_timestep_threshold = 1
-            elif '3quarter' in variant:
-                diffusion_timestep_threshold = 0.75
-            elif 'half' in variant:
-                diffusion_timestep_threshold = 0.5
-            elif '1quarter' in variant:
-                diffusion_timestep_threshold = 0.25
+            elif 'mid' in variant:
+                diffusion_timestep_threshold = 0.1
             else:
                 diffusion_timestep_threshold = 0
             dt = 0.02 if 'pointmaze' in exp else 0.05
@@ -204,7 +221,7 @@ for exp in exps:
                 # Check if a safety constraint is violated
                 for constraint in constraint_list_safe:
                     c, d = constraint[1]
-                    if obs @ c >= d + 1e-3:   # (Close to) Violation of constraint
+                    if obs @ c >= d + 1e-2:   # (Close to) Violation of constraint
                         n_violations += 1
                         total_violations += obs @ c - d
                         break
