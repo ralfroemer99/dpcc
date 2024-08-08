@@ -18,15 +18,17 @@ exps = [
 projection_variants = [
     'none',
     'end_safe',     # Projected generative diffusion models
-    # '0p1_safe',
-    # '0p2_safe',
+    '0p1_safe',
+    '0p2_safe',
     'full_safe',
     'end_all', 
     'end_all_cost',
     '0p1_all',
     '0p1_all_cost',
-    # '0p2_all',
-    # '0p2_all_cost',
+    '0p2_all',
+    '0p2_all_cost',
+    '0p5_all',
+    '0p5_all_cost',
     'full_all',
     'full_all_cost',
     ]
@@ -149,7 +151,7 @@ for exp in exps:
     if 'pointmaze' in exp:
         seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
     else:
-        seeds = np.arange(2)                   
+        seeds = np.arange(100)                   
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
@@ -169,6 +171,8 @@ for exp in exps:
                 diffusion_timestep_threshold = 0.1
             elif '0p2' in variant:
                 diffusion_timestep_threshold = 0.2
+            elif '0p5' in variant:
+                diffusion_timestep_threshold = 0.5
             else:
                 diffusion_timestep_threshold = 0
             dt = 0.02 if 'pointmaze' in exp else 0.05
@@ -233,7 +237,7 @@ for exp in exps:
                 # Check if a safety constraint is violated
                 for constraint in constraint_list_safe:
                     c, d = constraint[1]
-                    if obs @ c >= d + 1e-2:   # (Close to) Violation of constraint
+                    if obs @ c >= d + 1e-3:
                         n_violations += 1
                         total_violations += obs @ c - d
                         break
@@ -244,7 +248,7 @@ for exp in exps:
 
                 # Check whether one of the sampled trajectories violates a 
                 disable_projection = True
-                for constraint in constraint_list_safe:
+                for constraint in constraint_list_safe_enlarged:
                     c, d = constraint[1]
                     if np.any(samples.observations @ c >= d - 1e-2):   # (Close to) Violation of constraint
                         disable_projection = False
