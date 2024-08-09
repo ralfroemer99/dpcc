@@ -16,21 +16,21 @@ exps = [
     ]
 
 projection_variants = [
-    'none',
+    # 'none',
     'end_safe',     # Projected generative diffusion models
-    '0p1_safe',
-    '0p2_safe',
-    'full_safe',
+    # '0p1_safe',
+    # '0p2_safe',
+    # 'full_safe',
     'end_all', 
-    'end_all_cost',
-    '0p1_all',
-    '0p1_all_cost',
-    '0p2_all',
-    '0p2_all_cost',
-    '0p5_all',
-    '0p5_all_cost',
-    'full_all',
-    'full_all_cost',
+    # 'end_all_cost',
+    # '0p1_all',
+    # '0p1_all_cost',
+    # '0p2_all',
+    # '0p2_all_cost',
+    # '0p5_all',
+    # '0p5_all_cost',
+    # 'full_all',
+    # 'full_all_cost',
     ]
 
 for exp in exps:
@@ -151,7 +151,7 @@ for exp in exps:
     if 'pointmaze' in exp:
         seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
     else:
-        seeds = np.arange(100)                   
+        seeds = np.arange(2)                   
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
@@ -164,7 +164,7 @@ for exp in exps:
         if variant == 'none':
             projector = None
         else:
-            constraint_list = constraint_list_safe_enlarged if 'safe' in variant else constraint_list
+            constraint_list_proj = constraint_list_safe_enlarged if 'safe' in variant else constraint_list
             if 'full' in variant:
                 diffusion_timestep_threshold = 1
             elif '0p1' in variant:
@@ -179,7 +179,7 @@ for exp in exps:
             projector = Projector(
                 horizon=args.horizon, 
                 transition_dim=trajectory_dim, 
-                constraint_list=constraint_list, 
+                constraint_list=constraint_list_proj, 
                 normalizer=dataset.normalizer, 
                 diffusion_timestep_threshold=diffusion_timestep_threshold,
                 dt=dt,

@@ -86,7 +86,7 @@ base = {
 
         ## diffusion model
         'horizon': 16,
-        'n_diffusion_steps': 50,
+        'n_diffusion_steps': 20,
         'returns_condition': False,
         'predict_epsilon': False,
         'dynamic_loss': True,
