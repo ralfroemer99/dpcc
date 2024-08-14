@@ -12,8 +12,9 @@ args_to_watch = [
     ('horizon', 'H'),
     ('n_diffusion_steps', 'T'),
     ('returns_condition', 'R'),
-    ('predict_epsilon', 'E'),
-    ('dynamic_loss', 'DL'),
+    ('diffusion', 'D'),
+    # ('predict_epsilon', 'E'),
+    # ('dynamic_loss', 'DL'),
     ## value kwargs
     # ('discount', 'd'),
 ]
@@ -24,7 +25,7 @@ base = {
     'diffusion': {
         ## model
         'model': 'models.UNet1DTemporalCondModel',
-        'diffusion': 'models.GaussianInvDynDiffusion',
+        'diffusion': 'models.GaussianDiffusion',
         'horizon': 8,
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
@@ -33,7 +34,7 @@ base = {
         'action_weight': 10,            
         'dim': 32,
         'dim_mults': (1, 2, 4, 8),
-        'predict_epsilon': False,
+        'predict_epsilon': True,
         'dynamic_loss': False,
         'hidden_dim': 256,
         'attention': False,

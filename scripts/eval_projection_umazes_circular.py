@@ -11,19 +11,13 @@ from diffusers import DDPMScheduler, DDIMScheduler
 from diffuser.sampling import Projector
 
 exps = [
-    # 'pointmaze-umaze-dense-v2'
-    'antmaze-umaze-v1',
+    'pointmaze-umaze-dense-v2'
+    # 'antmaze-umaze-v1',
     ]
 
 projection_variants = [
     'none',
-    'select',
-    # 'end_safe', 
-    # 'mid_safe',
-    # 'full_safe',
-    # 'end_all', 
-    'mid_all',
-    # 'full_all',
+    'obstacles_full',
     ]
 
 for exp in exps:
@@ -63,23 +57,13 @@ for exp in exps:
                        'hip3': 11, 'ankle3': 12, 'hip4': 13, 'ankle4': 14, 'vx': 15, 'vy': 16, 'vz': 17, 'dhip1': 21, 'dankle1': 22,
                        'dhip2': 23, 'dankle2': 24, 'dhip3': 25, 'dankle3': 26, 'dhip4': 27, 'dankle4': 28, 'goal_x': 29, 'goal_y': 30, }
         cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['z'], obs_indices['vx'], obs_indices['vy'], obs_indices['vz']]
+        
+    constraint_list_obstacles = [
+        ['sphere_outside', [obs_indices['x'], obs_indices['y']], [2, 2], 0.5],
+    ]
 
-    if 'pointmaze' in exp:
-        safety_constraints = [
-            [[0.25, -1.5], [1.5, -0.25], 'above'],
-            [[1.5, 0.25], [0.25, 1.5], 'below'],
-            ]
-    else:
-        safety_constraints = [
-            # [[1, -6], [6, -1], 'above'],
-            # [[6, 1], [1, 6], 'below'],
-            # [[1.5, -6], [6, -1.5], 'above'],
-            # [[6, 1.5], [1.5, 6], 'below'],
-            [[2, -6], [6, -2], 'above'],
-            [[6, 2], [2, 6], 'below'],
-            ]
+    constraint_list = copy(constraint_list_obstacles)
 
-    constraint_list = []   # or copy(constraint_list_safe) to not enlarge the constraints
     if 'pointmaze' in exp:
         dynamic_constraints = [
             ('deriv', [obs_indices['x'], obs_indices['vx']]),
@@ -99,14 +83,14 @@ for exp in exps:
             # ('deriv', [obs_indices['hip4'], obs_indices['dhip4']]),
             # ('deriv', [obs_indices['ankle4'], obs_indices['dankle4']]),
         ]
-
     for constraint in dynamic_constraints:
         constraint_list.append(constraint)
 
     if 'pointmaze' in exp:
-        seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
+        seeds = [7, 10]
+        # seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
     else:
-        seeds = np.arange(50)                   
+        seeds = np.arange(2)                   
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
@@ -119,11 +103,14 @@ for exp in exps:
         if variant == 'none':
             projector = None
         else:
-            constraint_list = constraint_list_safe_enlarged if 'safe' in variant else constraint_list
             if 'full' in variant:
                 diffusion_timestep_threshold = 1
-            elif 'mid' in variant:
+            elif '0p1' in variant:
                 diffusion_timestep_threshold = 0.1
+            elif '0p2' in variant:
+                diffusion_timestep_threshold = 0.2
+            elif '0p5' in variant:
+                diffusion_timestep_threshold = 0.5
             else:
                 diffusion_timestep_threshold = 0
             dt = 0.02 if 'pointmaze' in exp else 0.05
@@ -138,6 +125,7 @@ for exp in exps:
             )
 
         # Create policy
+        return_costs = 'cost' in variant
         policy = Policy(
             model=diffusion,
             scheduler=scheduler,
@@ -145,6 +133,8 @@ for exp in exps:
             preprocess_fns=args.preprocess_fns,
             test_ret=args.test_ret,
             projector=projector,
+            # **sample_kwargs
+            return_costs=return_costs,
         )    
 
         if 'pointmaze' in exp:
@@ -183,12 +173,12 @@ for exp in exps:
                 conditions = {0: obs}
 
                 # Check if a safety constraint is violated
-                for constraint in constraint_list_safe:
-                    c, d = constraint[1]
-                    if obs @ c >= d + 1e-2:   # (Close to) Violation of constraint
-                        n_violations += 1
-                        total_violations += obs @ c - d
-                        break
+                # for constraint in constraint_list_safe:
+                #     c, d = constraint[1]
+                #     if obs @ c >= d + 1e-3:
+                #         n_violations += 1
+                #         total_violations += obs @ c - d
+                #         break
                 
                 start = time.time()
                 action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection)
@@ -196,12 +186,12 @@ for exp in exps:
 
                 # Check whether one of the sampled trajectories violates a 
                 disable_projection = True
-                for constraint in constraint_list_safe:
-                    c, d = constraint[1]
-                    if np.any(samples.observations @ c >= d - 1e-2):   # (Close to) Violation of constraint
-                        disable_projection = False
-                        # print('Enabled projection at timestep', _)
-                        break
+                # for constraint in constraint_list_safe_enlarged:
+                #     c, d = constraint[1]
+                #     if np.any(samples.observations @ c >= d - 1e-2):   # (Close to) Violation of constraint
+                #         disable_projection = False
+                #         # print('Enabled projection at timestep', _)
+                #         break
 
                 if _ % save_samples_every == 0:
                     sampled_trajectories.append(samples.observations[:, :, :])
@@ -273,14 +263,8 @@ for exp in exps:
                 else:
                     curr_ax.add_patch(matplotlib.patches.Rectangle((-6, -2), 8, 4, color='k', alpha=0.2))
 
-                for constraint in safety_constraints:
-                    mat = np.zeros((3, 2))
-                    mat[:2] = constraint[:2]
-                    if 'pointmaze' in exp:
-                        mat[2] = np.array([1.5, -1.5]) if constraint[2] == 'above' else np.array([1.5, 1.5])
-                    elif 'antmaze' in exp:
-                        mat[2] = np.array([6, -6]) if constraint[2] == 'above' else np.array([6, 6])
-                    curr_ax.add_patch(matplotlib.patches.Polygon(mat, color='c', alpha=0.2))
+                for constraint in constraint_list_obstacles:
+                    curr_ax.add_patch(matplotlib.patches.Circle(constraint[2], constraint[3], color='k', alpha=0.2))
 
         print(f'Success rate: {n_success / n_trials}')
         if n_success > 0:
@@ -289,10 +273,10 @@ for exp in exps:
             print(f'Avg total violation: {total_violations / n_trials}')
         print(f'Average computation time per step: {np.mean(avg_time)}')
 
-        fig.savefig(f'{args.savepath}/{variant}.png')   
+        # fig.savefig(f'{args.savepath}/{variant}.png')   
 
         ax_all[0, variant_idx].set_title(variant)
         env.close()
 
-    fig_all.savefig(f'{args.savepath}/all.png')
+    # fig_all.savefig(f'{args.savepath}/all.png')
     plt.show()

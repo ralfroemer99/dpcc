@@ -20,11 +20,11 @@ exps = [
         ]
 
 projection_variants = [
-    # 'none',
+    'none',
     # 'end_safe', 
     # 'full_safe', 
-    'end_all', 
-    'full_all',
+    # 'end_all', 
+    # 'full_all',
     ]
 
 for exp in exps:
@@ -113,7 +113,7 @@ for exp in exps:
     # Load dataset and create environment
     minari_dataset = minari.load_dataset(exp, download=True)
     # env = dataset.recover_environment(eval_env=True)     # Set render_mode='human' to visualize the environment
-    env = minari_dataset.recover_environment(eval_env=True) if 'pointmaze' in exp else dataset.recover_environment()     # Set render_mode='human' to visualize the environment
+    env = minari_dataset.recover_environment(eval_env=True) if 'pointmaze' in exp else minari_dataset.recover_environment()     # Set render_mode='human' to visualize the environment
 
     if 'pointmaze' in exp:
         env.env.env.env.point_env.frame_skip = 2
@@ -129,7 +129,7 @@ for exp in exps:
             projector = None
         else:
             constraint_list = constraint_list_safe if 'safe' in variant else constraint_list_safe_dyn
-            diffusion_timestep_threshold = 0.5 if 'full' in variant else 0
+            diffusion_timestep_threshold = 0.25 if 'full' in variant else 0
             dt = 0.02 if 'pointmaze' in exp else 0.05
             projector = Projector(
                 horizon=args.horizon, 
@@ -155,10 +155,11 @@ for exp in exps:
 
         # Run policy
         if 'pointmaze' in exp:
-            seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
+            # seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
+            seeds = [7, 10]
         else:
             seeds = [0, 1, 2, 3, 4, 5, 6, 7] 
-        n_trials = 4
+        n_trials = 2
         n_timesteps = 100 if 'pointmaze' in exp else 300
         fig, ax = plt.subplots(min(n_trials, 5), 5)
 
@@ -226,18 +227,16 @@ for exp in exps:
             ax[i, 4].plot(np.array(obs_buffer)[0, obs_indices['x']], np.array(obs_buffer)[0, obs_indices['y']], 'go')    # Start
         
         # fig.savefig(f'logs/last_plot.png')
-        if len(exps) == 1:
-            plt.show()     
+        # if len(exps) == 1:
+        #     plt.show()     
 
         # -----------------------------------------------------------------------------#
         # ---------------- Visualize denoising process of trajectories ----------------#
         # -----------------------------------------------------------------------------#
-        show_every = 1
-        n_show = diffusion.n_timesteps // show_every + 1
-        derivative_error = np.zeros((len(dynamic_constraints), n_show))
-        fig, ax = plt.subplots(min(n_trials, 5), n_show, figsize=(40, 15))
-        for t in range(n_show):
-            t_show = int(diffusion.n_timesteps - t * show_every)
+        show_which = [20, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+        fig, ax = plt.subplots(min(n_trials, 5), len(show_which), figsize=(40, 15))
+        for t in range(len(show_which)):
+            t_show = show_which[t]
             for trial_idx in range(min(n_trials, 5)):       # Iterate over trials
                 for __ in range(len(sampled_trajectories_all[trial_idx])):     # Iterate over sampled trajectories
                     for ___ in range(min(args.batch_size, 4)):            # Iterate over dimensions
@@ -256,6 +255,7 @@ for exp in exps:
                 else:
                     ax[trial_idx, t].add_patch(matplotlib.patches.Rectangle((-6, -2), 8, 4, color='k', alpha=0.2))
                 
+                # if variant is not 'none':
                 for constraint in constraint_points:
                     mat = np.zeros((3, 2))
                     mat[:2] = constraint[:2]
@@ -267,13 +267,13 @@ for exp in exps:
 
             ax[0, t].set_title(f'Diff. time={t_show}')
         
-        fig.savefig(f'{args.savepath}/inspect_diffusion_denoising_{variant}.png') 
+        # fig.savefig(f'{args.savepath}/inspect_diffusion_denoising_{variant}.png') 
         
         # -----------------------------------------------------------------------------#
         # ---------------- Visualize derivative error of trajectories -----------------#
         # -----------------------------------------------------------------------------#
         derivative_errors = np.zeros((len(dynamic_constraints), diffusion.n_timesteps + 1))
-        fig, ax = plt.subplots(n_show, min(n_trials, 5), figsize=(20, 20))
+        fig, ax = plt.subplots(diffusion.n_timesteps + 1, min(n_trials, 5), figsize=(20, 20))
         for t_show in reversed(range(diffusion.n_timesteps + 1)):
             for dim_idx, constraint in enumerate(dynamic_constraints):
                 error_curr = 0
@@ -292,9 +292,9 @@ for exp in exps:
             ax[dim_idx].set_title(f'Error for derivative relationship {constraint[1][0]}-{constraint[1][1]} with dt={dt}')
             ax[dim_idx].set_xlabel('Diffusion time')
 
-        fig.savefig(f'{args.savepath}/inspect_diffusion_derivative_error_{variant}.png')
+        # fig.savefig(f'{args.savepath}/inspect_diffusion_derivative_error_{variant}.png')
 
-        if len(exps) == 1:
-            plt.show()
+        # if len(exps) == 1:
+        plt.show()
 
         env.close()

@@ -12,6 +12,7 @@ args_to_watch = [
     ('horizon', 'H'),
     ('n_diffusion_steps', 'T'),
     ('returns_condition', 'R'),
+    ('diffusion', 'D'),
     # ('predict_epsilon', 'E'),
     # ('dynamic_loss', 'DL'),
     ## value kwargs
@@ -24,7 +25,7 @@ base = {
     'diffusion': {
         ## model
         'model': 'models.UNet1DTemporalCondModel',
-        'diffusion': 'models.GaussianInvDynDiffusion',
+        'diffusion': 'models.GaussianDiffusion',
         'horizon': 8,
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
@@ -34,7 +35,7 @@ base = {
         'dim': 32,
         'dim_mults': (1, 2, 4, 8),
         'predict_epsilon': True,
-        'dynamic_loss': True,
+        'dynamic_loss': False,
         'hidden_dim': 256,
         'attention': False,
         'condition_dropout': 0.25,
@@ -72,7 +73,7 @@ base = {
     'plan': {
         'policy': 'sampling.Policy',
         'max_episode_length': 100,
-        'batch_size': 16,
+        'batch_size': 8,
         'preprocess_fns': [],
         'device': 'cuda',
         'seed': 0,
@@ -85,6 +86,7 @@ base = {
         'exp_name': watch(args_to_watch),
 
         ## diffusion model
+        'diffusion': 'models.GaussianDiffusion',
         'horizon': 8,
         'n_diffusion_steps': 20,
         'returns_condition': False,

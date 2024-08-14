@@ -14,7 +14,7 @@ from .helpers import (
 
 class GaussianDiffusion(nn.Module):
     def __init__(self, model, horizon, observation_dim, action_dim, goal_dim=0, n_timesteps=1000,
-        loss_type='l1', clip_denoised=False, predict_epsilon=True,
+        loss_type='l1', clip_denoised=False, predict_epsilon=True, projector=None,
         action_weight=1.0, loss_discount=1.0, loss_weights=None, returns_condition=False,
         condition_guidance_w=0.1,):
         super().__init__()
@@ -154,7 +154,7 @@ class GaussianDiffusion(nn.Module):
         return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False):
+    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False, return_costs=False, projector=None, constraints=None):
         device = self.betas.device
 
         batch_size = shape[0]
@@ -162,11 +162,20 @@ class GaussianDiffusion(nn.Module):
         x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
 
         if return_diffusion: diffusion = [x]
+        if return_costs: costs = {}
 
         # progress = utils.Progress(self.n_timesteps) if verbose else utils.Silent()
         for i in reversed(range(0, self.n_timesteps)):
             timesteps = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(x, cond, timesteps, returns)
+
+            if projector is not None and i <= projector.diffusion_timestep_threshold * self.n_timesteps:
+                if return_costs:
+                    x, projection_costs = projector.project(x, constraints, return_costs=return_costs)
+                    if return_costs: costs[i] = projection_costs
+                else:
+                    x = projector.project(x, constraints)
+
             x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
 
             # progress.update({'t': i})
@@ -175,10 +184,11 @@ class GaussianDiffusion(nn.Module):
 
         # progress.close()
 
-        if return_diffusion:
-            return x, torch.stack(diffusion, dim=1)
-        else:
-            return x
+        infos = {}
+        if return_diffusion: infos['diffusion'] = torch.stack(diffusion, dim=1)
+        if return_costs: infos['projection_costs'] = costs
+
+        return x, infos
 
     @torch.no_grad()
     def conditional_sample(self, cond, returns=None, horizon=None, *args, **kwargs):
@@ -260,13 +270,6 @@ class GaussianDiffusion(nn.Module):
 
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
         x_noisy = apply_conditioning(x_noisy, cond, self.action_dim, goal_dim=self.goal_dim)
-
-        # if self.model.calc_energy:
-        #     assert self.predict_epsilon
-        #     x_noisy.requires_grad = True
-        #     t = torch.tensor(t, dtype=torch.float, requires_grad=True)
-        #     returns.requires_grad = True
-        #     noise.requires_grad = True
 
         x_recon = self.model(x_noisy, cond, t, returns)
 
@@ -413,9 +416,9 @@ class GaussianInvDynDiffusion(nn.Module):
         if self.returns_condition:
             # epsilon could be epsilon or x0 itself
             epsilon_cond = self.model(x, cond, t, returns, use_dropout=False)
-            # epsilon_uncond = self.model(x, cond, t, returns, force_dropout=True)
-            # epsilon = epsilon_uncond + self.condition_guidance_w*(epsilon_cond - epsilon_uncond)
-            epsilon = epsilon_cond      # REMOVE
+            epsilon_uncond = self.model(x, cond, t, returns, force_dropout=True)
+            epsilon = epsilon_uncond + self.condition_guidance_w*(epsilon_cond - epsilon_uncond)
+            # epsilon = epsilon_cond      # REMOVE
         else:
             epsilon = self.model(x, cond, t)
 
@@ -467,10 +470,9 @@ class GaussianInvDynDiffusion(nn.Module):
 
             # progress.update({'t': i})
             if return_diffusion: diffusion.append(x)
-            
 
         infos = {}
-        if return_diffusion: infos['diffusion'] = diffusion
+        if return_diffusion: infos['diffusion'] = torch.stack(diffusion, dim=1)
         if return_costs: infos['projection_costs'] = costs
 
         return x, infos

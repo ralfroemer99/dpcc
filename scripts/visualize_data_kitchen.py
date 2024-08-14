@@ -2,7 +2,7 @@ import minari
 import numpy as np
 import matplotlib.pyplot as plt
 
-exp = 'kitchen-mixed-v1'
+exp = 'kitchen-complete-v1'
 
 obs_indices = {'q1': 0, 'q2': 1, 'q3': 2, 'q4': 3, 'q5': 4, 'q6': 5, 'q7': 6, 'gripper_r': 7, 'gripper_l': 8,
                'dq1': 9, 'dq2': 10, 'dq3': 11, 'dq4': 12, 'dq5': 13, 'dq6': 14, 'dq7': 15, 'dgripper_r': 16, 'dgripper_l': 17,
@@ -23,7 +23,7 @@ env = dataset.recover_environment(render_mode='human', eval_env=True)
 #     obs, rew, terminated, truncated, info = env.step(action)
 #     env.render()
 
-n_plot = 100
+n_plot = 19
 
 episodes_generator = dataset.iterate_episodes(episode_indices=np.arange(n_plot))
 

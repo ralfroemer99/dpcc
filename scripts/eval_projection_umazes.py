@@ -11,26 +11,26 @@ from diffusers import DDPMScheduler, DDIMScheduler
 from diffuser.sampling import Projector
 
 exps = [
-    # 'pointmaze-umaze-dense-v2'
-    'antmaze-umaze-v1',
+    'pointmaze-umaze-dense-v2'
+    # 'antmaze-umaze-v1',
     ]
 
 projection_variants = [
-    # 'none',
+    'none',
     'end_safe',     # Projected generative diffusion models
-    # '0p1_safe',
-    # '0p2_safe',
-    # 'full_safe',
-    'end_all', 
-    # 'end_all_cost',
+    '0p1_safe',
+    '0p2_safe',
+    'full_safe',
+    # 'end_all', 
+    'end_all_cost',
     # '0p1_all',
-    # '0p1_all_cost',
+    '0p1_all_cost',
     # '0p2_all',
-    # '0p2_all_cost',
+    '0p2_all_cost',
     # '0p5_all',
-    # '0p5_all_cost',
+    '0p5_all_cost',
     # 'full_all',
-    # 'full_all_cost',
+    'full_all_cost',
     ]
 
 for exp in exps:
@@ -59,17 +59,24 @@ for exp in exps:
     # Create projector
     if diffusion.__class__.__name__ == 'GaussianDiffusion':
         trajectory_dim = diffusion.transition_dim
+        action_dim = diffusion.action_dim
     else:
         trajectory_dim = diffusion.observation_dim
+        action_dim = 0
 
     if 'pointmaze' in exp:
         obs_indices = {'x': 0, 'y': 1, 'vx': 2, 'vy': 3, 'goal_x': 4, 'goal_y': 5}
         cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['vx'], obs_indices['vy']]
+        if diffusion.__class__.__name__ == 'GaussianDiffusion': 
+            # obs_indices = {k: v + diffusion.action_dim for k, v in obs_indices.items()}
+            action_indices = {'ax': 0, 'ay': 1}
+            cost_dims = [2, 3, 4, 5]      # Only position-velocity changes penalized  
     elif 'antmaze' in exp:
         obs_indices = {'x': 0, 'y': 1, 'z':2, 'qx': 3, 'qy': 4, 'qz': 5, 'qw': 6, 'hip1': 7, 'ankle1': 8, 'hip2': 9, 'ankle2': 10, 
                        'hip3': 11, 'ankle3': 12, 'hip4': 13, 'ankle4': 14, 'vx': 15, 'vy': 16, 'vz': 17, 'dhip1': 21, 'dankle1': 22,
                        'dhip2': 23, 'dankle2': 24, 'dhip3': 25, 'dankle3': 26, 'dhip4': 27, 'dankle4': 28, 'goal_x': 29, 'goal_y': 30, }
         cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['z'], obs_indices['vx'], obs_indices['vy'], obs_indices['vz']]
+        # TODO: Account for action prediction case
 
     if 'pointmaze' in exp:
         safety_constraints = [
@@ -78,11 +85,11 @@ for exp in exps:
             ]
     else:
         safety_constraints = [
-            # [[1, -6], [6, -1], 'above'],
-            # [[6, 1], [1, 6], 'below'],
-            # [[1.5, -6], [6, -1.5], 'above'],
-            # [[6, 1.5], [1.5, 6], 'below'],
-            [[1.75, -6], [6, -1.75], 'above'],
+            # [[1, -6], [6, -1], 'above'],          # tight
+            # [[6, 1], [1, 6], 'below'],            # |
+            # [[1.5, -6], [6, -1.5], 'above'],      # |
+            # [[6, 1.5], [1.5, 6], 'below'],        # v
+            [[1.75, -6], [6, -1.75], 'above'],      # less tight
             [[6, 1.75], [1.75, 6], 'below'],
             # [[2, -6], [6, -2], 'above'],
             # [[6, 2], [2, 6], 'below'],
@@ -94,11 +101,11 @@ for exp in exps:
         d = constraint[0][1] - m * constraint[0][0]
         C_row = np.zeros(trajectory_dim)
         if constraint[2] == 'below':
-            C_row[obs_indices['x']] = -m
-            C_row[obs_indices['y']] = 1
+            C_row[obs_indices['x'] + action_dim] = -m
+            C_row[obs_indices['y'] + action_dim] = 1
         elif constraint[2] == 'above':
-            C_row[obs_indices['x']] = m
-            C_row[obs_indices['y']] = -1
+            C_row[obs_indices['x'] + action_dim] = m
+            C_row[obs_indices['y'] + action_dim] = -1
             d *= -1
         constraint_list_safe.append(('ineq', (C_row, d)))
         
@@ -116,25 +123,25 @@ for exp in exps:
         d = constraint[0][1] - m * constraint[0][0]
         C_row = np.zeros(trajectory_dim)
         if constraint[2] == 'below':
-            C_row[obs_indices['x']] = -m
-            C_row[obs_indices['y']] = 1
+            C_row[obs_indices['x'] + action_dim] = -m
+            C_row[obs_indices['y'] + action_dim] = 1
         elif constraint[2] == 'above':
-            C_row[obs_indices['x']] = m
-            C_row[obs_indices['y']] = -1
+            C_row[obs_indices['x'] + action_dim] = m
+            C_row[obs_indices['y'] + action_dim] = -1
             d *= -1
         constraint_list_safe_enlarged.append(('ineq', (C_row, d)))
 
     constraint_list = copy(constraint_list_safe_enlarged)   # or copy(constraint_list_safe) to not enlarge the constraints
     if 'pointmaze' in exp:
         dynamic_constraints = [
-            ('deriv', [obs_indices['x'], obs_indices['vx']]),
-            ('deriv', [obs_indices['y'], obs_indices['vy']]),
+            ('deriv', np.array([obs_indices['x'], obs_indices['vx']]) + action_dim),
+            ('deriv', np.array([obs_indices['y'], obs_indices['vy']]) + action_dim),
         ]
     elif 'antmaze' in exp:
         dynamic_constraints = [
-            ('deriv', [obs_indices['x'], obs_indices['vx']]),
-            ('deriv', [obs_indices['y'], obs_indices['vy']]),
-            ('deriv', [obs_indices['z'], obs_indices['vz']]),
+            ('deriv', np.array([obs_indices['x'], obs_indices['vx']]) + action_dim),
+            ('deriv', np.array([obs_indices['y'], obs_indices['vy']]) + action_dim),
+            ('deriv', np.array([obs_indices['z'], obs_indices['vz']]) + action_dim),
             # ('deriv', [obs_indices['hip1'], obs_indices['dhip1']]),
             # ('deriv', [obs_indices['ankle1'], obs_indices['dankle1']]),
             # ('deriv', [obs_indices['hip2'], obs_indices['dhip2']]),
@@ -149,9 +156,10 @@ for exp in exps:
         constraint_list.append(constraint)
 
     if 'pointmaze' in exp:
-        seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
+        # seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
+        seeds = [7, 10, 11, 16, 24]
     else:
-        seeds = np.arange(2)                   
+        seeds = np.arange(100)                   
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
@@ -237,9 +245,9 @@ for exp in exps:
                 # Check if a safety constraint is violated
                 for constraint in constraint_list_safe:
                     c, d = constraint[1]
-                    if obs @ c >= d + 1e-3:
+                    if obs @ c[action_dim:] >= d + 1e-3:
                         n_violations += 1
-                        total_violations += obs @ c - d
+                        total_violations += obs @ c[action_dim:] - d
                         break
                 
                 start = time.time()
@@ -250,7 +258,7 @@ for exp in exps:
                 disable_projection = True
                 for constraint in constraint_list_safe_enlarged:
                     c, d = constraint[1]
-                    if np.any(samples.observations @ c >= d - 1e-2):   # (Close to) Violation of constraint
+                    if np.any(samples.observations @ c[action_dim:] >= d - 1e-2):   # (Close to) Violation of constraint
                         disable_projection = False
                         # print('Enabled projection at timestep', _)
                         break
@@ -341,10 +349,10 @@ for exp in exps:
             print(f'Avg total violation: {total_violations / n_trials}')
         print(f'Average computation time per step: {np.mean(avg_time)}')
 
-        fig.savefig(f'{args.savepath}/{variant}.png')   
+        # fig.savefig(f'{args.savepath}/{variant}.png')   
 
         ax_all[0, variant_idx].set_title(variant)
         env.close()
 
-    fig_all.savefig(f'{args.savepath}/all.png')
+    # fig_all.savefig(f'{args.savepath}/all.png')
     plt.show()

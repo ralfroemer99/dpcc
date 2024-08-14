@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-# exp = 'pointmaze-umaze-dense-v2'
+# exp = 'pointmaze-large-dense-v2'
 exp = 'antmaze-umaze-v1'
 # exp = 'relocate-cloned-v2'
 
@@ -34,30 +34,31 @@ elif 'antmaze' in exp:
         ('deriv', [obs_indices['ankle4'], obs_indices['dankle4']]),
     ]
 
-if 'pointmaze' in exp:
+safety_constraints = []
+if 'pointmaze-umaze' in exp:
     safety_constraints = [
         [[0.25, -1.5], [1.5, -0.25], 'above'],
         [[1.5, 0.25], [0.25, 1.5], 'below'],
         ]
-else:
-    safety_constraints = [
-        # [[1, -6], [6, -1], 'above'],
-        # [[6, 1], [1, 6], 'below'],
-        # [[1.5, -6], [6, -1.5], 'above'],
-        # [[6, 1.5], [1.5, 6], 'below'],
-        [[2, -6], [6, -2], 'above'],
-        [[6, 2], [2, 6], 'below'],
-        ]
+# elif 'antmaze-umaze' in exp:
+#     safety_constraints = [
+#         # [[1, -6], [6, -1], 'above'],
+#         # [[6, 1], [1, 6], 'below'],
+#         # [[1.5, -6], [6, -1.5], 'above'],
+#         # [[6, 1.5], [1.5, 6], 'below'],
+#         [[2, -6], [6, -2], 'above'],
+#         [[6, 2], [2, 6], 'below'],
+#         ]
 
 dataset = minari.load_dataset(exp, download=True)
 env = dataset.recover_environment(render_mode='human', eval_env=True)
 
-# env.reset()
-# env.render()
-# for _ in range(20):
-#     action = env.action_space.sample()
-#     obs, rew, terminated, truncated, info = env.step(action)
-#     env.render()
+env.reset()
+env.render()
+for _ in range(50):
+    action = env.action_space.sample()
+    obs, rew, terminated, truncated, info = env.step(action)
+    env.render()
 
 n_plot = 100
 
