@@ -3,8 +3,8 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-# exp = 'pointmaze-large-dense-v2'
-exp = 'antmaze-umaze-v1'
+exp = 'pointmaze-umaze-dense-v2'
+# exp = 'antmaze-umaze-v1'
 # exp = 'relocate-cloned-v2'
 
 if 'pointmaze' in exp:

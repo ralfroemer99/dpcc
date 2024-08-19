@@ -10,27 +10,39 @@ from diffuser.sampling import Policy
 from diffusers import DDPMScheduler, DDIMScheduler
 from diffuser.sampling import Projector
 
+# torch.set_default_device('cpu')
+
 exps = [
-    'pointmaze-umaze-dense-v2'
-    # 'antmaze-umaze-v1',
+    # 'pointmaze-umaze-dense-v2'
+    'antmaze-umaze-v1',
     ]
 
 projection_variants = [
-    'none',
-    'end_safe',     # Projected generative diffusion models
-    '0p1_safe',
-    '0p2_safe',
-    'full_safe',
+    # 'none',
+    # 'end_safe',     # Projected generative diffusion models
+    # '0p1_safe',
+    # '0p2_safe',
+    # '0p5_safe',
+    # 'full_safe',
     # 'end_all', 
-    'end_all_cost',
+    # 'end_all_cost',
+    # 'end_all_cost_repeatlast',
     # '0p1_all',
-    '0p1_all_cost',
+    # '0p1_all_cost',
+    '0p1_all_cost_repeatlast3',
+    '0p1_all_cost_repeatlast5',
     # '0p2_all',
     '0p2_all_cost',
+    '0p2_all_cost_repeatlast3',
+    '0p2_all_cost_repeatlast5',
     # '0p5_all',
     '0p5_all_cost',
+    '0p5_all_cost_repeatlast3',
+    '0p5_all_cost_repeatlast5',
     # 'full_all',
     'full_all_cost',
+    'full_all_cost_repeatlast3',
+    'full_all_cost_repeatlast5',
     ]
 
 for exp in exps:
@@ -42,7 +54,7 @@ for exp in exps:
     # Get model
     diffusion_experiment = utils.load_diffusion(
         args.loadbase, args.dataset, args.diffusion_loadpath,
-        epoch=args.diffusion_epoch, seed=args.seed,
+        epoch=args.diffusion_epoch, seed=args.seed, device=args.device
     )
 
     diffusion_losses = diffusion_experiment.losses
@@ -156,10 +168,10 @@ for exp in exps:
         constraint_list.append(constraint)
 
     if 'pointmaze' in exp:
-        # seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
-        seeds = [7, 10, 11, 16, 24]
+        seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
+        # seeds = [7, 10, 11, 16, 24]
     else:
-        seeds = np.arange(100)                   
+        seeds = np.arange(5)                   
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
@@ -169,7 +181,7 @@ for exp in exps:
     for variant_idx, variant in enumerate(projection_variants):
         print(f'------------------------Running {exp} - {variant}----------------------------')
 
-        if variant == 'none':
+        if 'none' in variant:
             projector = None
         else:
             constraint_list_proj = constraint_list_safe_enlarged if 'safe' in variant else constraint_list
@@ -192,10 +204,18 @@ for exp in exps:
                 diffusion_timestep_threshold=diffusion_timestep_threshold,
                 dt=dt,
                 cost_dims=cost_dims,
+                device=args.device,
             )
 
         # Create policy
         return_costs = 'cost' in variant
+        # repeat_last = 3 if 'repeatlast' in variant else 0
+        if 'repeatlast1' in variant: repeat_last = 1
+        elif 'repeatlast2' in variant: repeat_last = 2
+        elif 'repeatlast3' in variant: repeat_last = 3
+        elif 'repeatlast4' in variant: repeat_last = 4
+        elif 'repeatlast5' in variant: repeat_last = 5
+        else: repeat_last = 0
         policy = Policy(
             model=diffusion,
             scheduler=scheduler,
@@ -205,6 +225,7 @@ for exp in exps:
             projector=projector,
             # **sample_kwargs
             return_costs=return_costs,
+            repeat_last=repeat_last,
         )    
 
         if 'pointmaze' in exp:
@@ -349,10 +370,11 @@ for exp in exps:
             print(f'Avg total violation: {total_violations / n_trials}')
         print(f'Average computation time per step: {np.mean(avg_time)}')
 
-        # fig.savefig(f'{args.savepath}/{variant}.png')   
+        fig.savefig(f'{args.savepath}/{variant}.png')   
+        plt.close(fig)
 
         ax_all[0, variant_idx].set_title(variant)
         env.close()
 
-    # fig_all.savefig(f'{args.savepath}/all.png')
+    fig_all.savefig(f'{args.savepath}/all.png')
     plt.show()

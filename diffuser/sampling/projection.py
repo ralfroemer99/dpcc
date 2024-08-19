@@ -55,7 +55,7 @@ class Projector:
             x_max = self.normalizer.maxs
             x_min = self.normalizer.mins
 
-            self.Q *= torch.diag(torch.tile(torch.tensor(x_max - x_min, device='cuda') ** 2, (self.horizon, )))
+            self.Q *= torch.diag(torch.tile(torch.tensor(x_max - x_min, device=self.device) ** 2, (self.horizon, )))
         
         self.A = torch.empty((0, self.transition_dim * self.horizon), device=self.device)   # Equality constraints
         self.b = torch.empty(0, device=self.device)
@@ -81,6 +81,7 @@ class Projector:
 
         self.safety_constraints.build_matrices()
         self.dynamic_constraints.build_matrices()
+        self.obstacle_constraints.build_matrices()
         self.append_constraint(self.safety_constraints)
         self.append_constraint(self.dynamic_constraints)
         self.add_numpy_constraints()     
@@ -99,17 +100,20 @@ class Projector:
         dims = trajectory.shape
 
         # Reshape the trajectory to a batch of vectors (from B x H x T to B x (HT) or a vector (from H x T to HT)
-        # trajectory = trajectory.reshape(trajectory.shape[0], -1) if trajectory.ndim == 3 else trajectory.view(-1)
         # if trajectory.ndim == 2:        # From H x T to HT
         #     batch_size = 1
         #     trajectory = trajectory.view(-1)
         # else:      # From B x H x T to B x (HT)
         batch_size = trajectory.shape[0]
-        trajectory = trajectory.reshape(trajectory.shape[0], -1)
+        trajectory_reshaped = trajectory.reshape(trajectory.shape[0], -1)
 
         # Cost
-        r = - trajectory @ self.Q
-        trajectory_np = trajectory.cpu().numpy()
+        r = - trajectory_reshaped @ self.Q
+        r_np = r.cpu().numpy()
+        # if self.solver == 'proxsuite' or self.solver == 'gurobi':
+        #     r = r.cpu().numpy()
+        Q = self.Q if self.solver == 'qpth' else self.Q_np
+        trajectory_np = trajectory_reshaped.cpu().numpy()
 
         # Constraints
         if self.solver == 'qpth':
@@ -118,8 +122,8 @@ class Projector:
             A, b, C, d = self.A_np, self.b_np, self.C_np, self.d_np
 
         if self.skip_initial_state:
-            s_0 = trajectory[:self.transition_dim] if batch_size == 1 else trajectory[0, :self.transition_dim]    # Current state
-            if self.solver == 'proxsuite':
+            s_0 = trajectory_reshaped[:self.transition_dim] if batch_size == 1 else trajectory_reshaped[0, :self.transition_dim]    # Current state
+            if self.solver == 'proxsuite' or self.solver == 'gurobi':
                 s_0 = s_0.cpu().numpy()
             counter = 0
             for constraint in self.dynamic_constraints.constraint_list:
@@ -129,50 +133,81 @@ class Projector:
                     counter += 1
 
         # Add additional constraints (if any) --> TODO: For proxsuite, add them to the numpy matrices
-        if constraints is not None:
-            for constraint in constraints:
-                constraint.build_matrices()
-                if self.solver == 'qpth':
-                    A = torch.cat([A, constraint.A], dim=0)
-                    b = torch.cat([b, constraint.b], dim=0)
-                    C = torch.cat([C, constraint.C], dim=0)
-                    d = torch.cat([d, constraint.d], dim=0)     
-                else:
-                    A = np.concatenate([A, constraint.A.cpu().numpy()], axis=0)
-                    b = np.concatenate([b, constraint.b.cpu().numpy()], axis=0)
-                    C = np.concatenate([C, constraint.C.cpu().numpy()], axis=0)
-                    d = np.concatenate([d, constraint.d.cpu().numpy()], axis=0) 
+        # if constraints is not None:
+        #     for constraint in constraints:
+        #         constraint.build_matrices()
+        #         if self.solver == 'qpth':
+        #             A = torch.cat([A, constraint.A], dim=0)
+        #             b = torch.cat([b, constraint.b], dim=0)
+        #             C = torch.cat([C, constraint.C], dim=0)
+        #             d = torch.cat([d, constraint.d], dim=0)     
+        #         else:
+        #             A = np.concatenate([A, constraint.A.cpu().numpy()], axis=0)
+        #             b = np.concatenate([b, constraint.b.cpu().numpy()], axis=0)
+        #             C = np.concatenate([C, constraint.C.cpu().numpy()], axis=0)
+        #             d = np.concatenate([d, constraint.d.cpu().numpy()], axis=0) 
 
+        projection_costs = np.ones(batch_size, dtype=np.float32)
         # start_time = time.time()
-        if self.solver == 'qpth':
-            # Solve optimization problem with qpth solver
-            sol = QPFunction()(self.Q, r, C, d, A, b)
+        if self.solver == 'qpth':           # Solve optimization problem with qpth solver
+            sol = QPFunction()(Q, r, C, d, A, b)
             sol = sol.view(dims)
-        else:
-            # Solve optimization problem with proxsuite solver
-            r_np = r.cpu().numpy()
+        elif self.solver == 'proxsuite':    # Solve optimization problem with proxsuite solver
             sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
-            projection_costs = np.ones(batch_size, dtype=np.float32)
             if self.parallelize == False:
                 qp = proxsuite.proxqp.dense.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0])
                 # qp = proxsuite.proxqp.sparse.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0]) --> Does not work?
                 for i in range(batch_size):
-                    qp.init(self.Q_np, r_np[i], A, b, C, None, d)
+                    qp.init(Q, r_np[i], A, b, C, None, d)
                     qp.solve()
                     sol_np[i] = qp.results.x
-                    projection_costs[i] = 0.5 * qp.results.x @ self.Q_np @ qp.results.x + r_np[i] @ qp.results.x + 0.5 * trajectory_np[i] @ self.Q_np @ trajectory_np[i]
+                    projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
             else:
                 with ThreadPoolExecutor() as executor:
-                    results = list(executor.map(solve_qp_proxsuite, range(batch_size), [self.Q_np]*batch_size, [r_np]*batch_size, [A]*batch_size, [b]*batch_size, 
+                    results = list(executor.map(solve_qp_proxsuite, range(batch_size), [Q]*batch_size, [r_np]*batch_size, [A]*batch_size, [b]*batch_size, 
                                                 [C]*batch_size, [d]*batch_size, [self.horizon]*batch_size, [self.transition_dim]*batch_size))
 
                 for i, result in enumerate(results):
                     sol_np[i] = result
+                    projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
+            sol = torch.tensor(sol_np, device=self.device).reshape(dims)
+        elif self.solver == 'gurobi':   # Solve optimization problem with gurobi solver
+            sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
+            # Create model --> Put these things in the init method
+            model = gp.Model('nonconvex_qp')
+            model.Params.LogToConsole = 0
+
+            # Add variables
+            tau = model.addMVar(shape=(self.horizon * self.transition_dim), lb=-gp.GRB.INFINITY, ub=gp.GRB.INFINITY, name='tau')
+            
+            # Add constraints
+            # model.addConstr(A @ tau == b, name='eq_constraints')      # Dynamics constraints
+            for constraint_idx in range(len(self.obstacle_constraints.P_list)):
+                P = self.obstacle_constraints.P_list[constraint_idx]
+                q = self.obstacle_constraints.q_list[constraint_idx]
+                v = self.obstacle_constraints.v_list[constraint_idx]
+                for t in range(1, self.horizon):                        # Obstacle constraints
+                    start_idx = t * self.transition_dim
+                    end_idx = (t + 1) * self.transition_dim
+                    model.addConstr(tau[start_idx: end_idx] @ P @ tau[start_idx: end_idx] + q @ tau[start_idx: end_idx] <= v,
+                                    name=f'obstacle_{t}')
+
+            # Cost function
+            for i in range(batch_size):
+                model.setObjective(0.5 * tau @ Q @ tau + r_np[i] @ tau, gp.GRB.MINIMIZE)
+                start_time = time.time()
+                model.optimize()
+                print(f'Projection time for sample {i}:', time.time() - start_time)
+                if model.Status == 2:
+                    sol_np[i] = np.array(model.getAttr("X"))
+                else:
+                    sol_np[i] = trajectory_np[i]
+            
             sol = torch.tensor(sol_np, device=self.device).reshape(dims)
 
         # print(f'Projection time {self.solver}:', time.time() - start_time)
         if return_costs:
-            return sol, projection_costs
+            return sol, projection_costs    # only implemented for proxsuite and parallelize=False
         else:
             return sol
 
@@ -381,8 +416,8 @@ class ObstacleConstraints(Constraints):
                     e.g. [('sphere_inside', [0, 2] [-1, 5], 1), ('sphere_outside', [1, 3], [0, 1] 4)] -->
                     (x_0 + 1)^2 + (x_2 - 5)^2 <= 1, x_1^2 + (x_3 - 1)^2 >= 4
                     where x_i is the i-th dimension of the state or state-action vectors at time t
-            Generate the matrix Q and the vectors  for:
-                s_i^T Q s_i + p^T s_i <= c
+            Generate the matrix P and the vector q for:
+                s_i^T P s_i + q^T s_i <= v
             The matrices have the following shapes:
                 C: (horizon * n_bounds, transition_dim * horizon)
                 d: (horizon * n_bounds)
@@ -393,38 +428,41 @@ class ObstacleConstraints(Constraints):
         else:
             self.constraint_list.extend(constraint_list)
 
-        self.Q_list = []
-        self.p_list = []
-        self.c_list = []
+        self.P_list = []
+        self.q_list = []
+        self.v_list = []
         for constraint in constraint_list:
             type = constraint[0]
             dims = constraint[1]
             center = constraint[2]
             radius = constraint[3]
 
-            Q = torch.zeros((self.transition_dim, self.transition_dim), device=self.device)
-            p = torch.zeros(self.transition_dim, device=self.device)
-            c = torch.tensor(radius ** 2, device=self.device)
+            P = np.zeros((self.transition_dim, self.transition_dim))
+            q = np.zeros(self.transition_dim)
+            v = radius ** 2
 
+            dim_counter = 0
             for dim in dims:
                 if self.normalizer is not None:
                     delta_s = self.normalizer.maxs[dim] - self.normalizer.mins[dim]
                     s_min = self.normalizer.mins[dim]
-                    Q[dim, dim] = delta_s ** 2 / 4
-                    p[dim] = delta_s **2 / 2 + delta_s * (s_min - center[dim])
-                    c -= delta_s **2 / 4 + delta_s * (s_min - center[dim]) - (s_min - center[dim]) ** 2
+                    P[dim, dim] = delta_s ** 2 / 4
+                    q[dim] = delta_s**2 / 2 + delta_s * (s_min - center[dim_counter])
+                    v -= delta_s**2 / 4 + delta_s * (s_min - center[dim_counter]) - (s_min - center[dim_counter]) ** 2
                 else:
-                    Q[dim, dim] = 1
-                    p[dim] = -2 * center[dim] 
+                    P[dim, dim] = 1
+                    q[dim] = -2 * center[dim_counter]
+                    v -= center[dim_counter] ** 2
+                dim_counter += 1
 
             if type == 'sphere_outside':
-                Q = -Q
-                p = -p
-                c = -c
+                P = -P
+                q = -q
+                v = -v
 
-            self.Q_list.append(Q)
-            self.p_list.append(p)
-            self.c_list.append(c)    
+            self.P_list.append(P)
+            self.q_list.append(q)
+            self.v_list.append(v)    
 
 
 class ProjectionNormalizer():

@@ -59,8 +59,8 @@ def load_diffusion(*loadpath, epoch='latest', device='cuda:0', seed=None):
     trainer_config._dict['results_folder'] = os.path.join(*loadpath)
 
     dataset = dataset_config()
-    model = model_config()
-    diffusion = diffusion_config(model)
+    model = model_config().to(device)
+    diffusion = diffusion_config(model).to(device)
     trainer = trainer_config(diffusion_model=diffusion, dataset=dataset)
 
     if epoch == 'latest':

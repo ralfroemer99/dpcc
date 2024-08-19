@@ -113,7 +113,7 @@ class Policy:
             conditions,
             'observations',
         )
-        conditions = utils.to_torch(conditions, dtype=torch.float32, device='cuda:0')
+        conditions = utils.to_torch(conditions, dtype=torch.float32, device='cpu')
         conditions = utils.apply_dict(
             einops.repeat,
             conditions,

@@ -16,8 +16,8 @@ exps = [
     ]
 
 projection_variants = [
-    'none',
-    'obstacles_full',
+    '0p2_obstacles',
+    'none'
     ]
 
 for exp in exps:
@@ -59,7 +59,7 @@ for exp in exps:
         cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['z'], obs_indices['vx'], obs_indices['vy'], obs_indices['vz']]
         
     constraint_list_obstacles = [
-        ['sphere_outside', [obs_indices['x'], obs_indices['y']], [2, 2], 0.5],
+        ['sphere_outside', [obs_indices['x'], obs_indices['y']], [1, 0], 0.1],
     ]
 
     constraint_list = copy(constraint_list_obstacles)
@@ -122,10 +122,12 @@ for exp in exps:
                 diffusion_timestep_threshold=diffusion_timestep_threshold,
                 dt=dt,
                 cost_dims=cost_dims,
+                solver='gurobi',
             )
 
         # Create policy
         return_costs = 'cost' in variant
+        # TODO: repeat_last
         policy = Policy(
             model=diffusion,
             scheduler=scheduler,
@@ -170,15 +172,17 @@ for exp in exps:
             sampled_trajectories = []
             disable_projection = True
             for _ in range(n_timesteps):
+                print(f'Trial {i}, timestep {_}')
                 conditions = {0: obs}
 
                 # Check if a safety constraint is violated
-                # for constraint in constraint_list_safe:
-                #     c, d = constraint[1]
-                #     if obs @ c >= d + 1e-3:
-                #         n_violations += 1
-                #         total_violations += obs @ c - d
-                #         break
+                for constraint in constraint_list_obstacles:
+                    type = constraint[0]
+                    dims, c, r = constraint[1:]
+                    if np.linalg.norm(obs[dims] - c) <= r:
+                        n_violations += 1
+                        total_violations += np.linalg.norm(obs[dims] - c)
+                        break
                 
                 start = time.time()
                 action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection)
@@ -186,12 +190,14 @@ for exp in exps:
 
                 # Check whether one of the sampled trajectories violates a 
                 disable_projection = True
-                # for constraint in constraint_list_safe_enlarged:
-                #     c, d = constraint[1]
-                #     if np.any(samples.observations @ c >= d - 1e-2):   # (Close to) Violation of constraint
-                #         disable_projection = False
-                #         # print('Enabled projection at timestep', _)
-                #         break
+                for constraint in constraint_list_obstacles:
+                    type = constraint[0]
+                    dims, c, r = constraint[1:]
+                    for sample in samples.observations:
+                        if np.linalg.norm(sample[:, dims] - c, axis=1).min() <= r:
+                            disable_projection = False
+                            # print('Enabled projection at timestep', _)
+                            break
 
                 if _ % save_samples_every == 0:
                     sampled_trajectories.append(samples.observations[:, :, :])
@@ -278,5 +284,5 @@ for exp in exps:
         ax_all[0, variant_idx].set_title(variant)
         env.close()
 
-    # fig_all.savefig(f'{args.savepath}/all.png')
+    fig_all.savefig(f'{args.savepath}/all_circular.png')
     plt.show()

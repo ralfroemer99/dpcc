@@ -154,7 +154,8 @@ class GaussianDiffusion(nn.Module):
         return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False, return_costs=False, projector=None, constraints=None):
+    def p_sample_loop(self, shape, cond, returns=None, return_diffusion=False, return_costs=False, 
+                      projector=None, constraints=None, repeat_last=0):
         device = self.betas.device
 
         batch_size = shape[0]
@@ -164,12 +165,14 @@ class GaussianDiffusion(nn.Module):
         if return_diffusion: diffusion = [x]
         if return_costs: costs = {}
 
-        # progress = utils.Progress(self.n_timesteps) if verbose else utils.Silent()
-        for i in reversed(range(0, self.n_timesteps)):
-            timesteps = torch.full((batch_size,), i, device=device, dtype=torch.long)
+        # Denoising process
+        last_timestep = -repeat_last if repeat_last > 0 and projector is not None else 0
+        for i in reversed(range(last_timestep, self.n_timesteps)):
+            t = i if i >= 0 else 0
+            timesteps = torch.full((batch_size,), t, device=device, dtype=torch.long)
             x = self.p_sample(x, cond, timesteps, returns)
 
-            if projector is not None and i <= projector.diffusion_timestep_threshold * self.n_timesteps:
+            if projector is not None and t <= projector.diffusion_timestep_threshold * self.n_timesteps:
                 if return_costs:
                     x, projection_costs = projector.project(x, constraints, return_costs=return_costs)
                     if return_costs: costs[i] = projection_costs
@@ -178,11 +181,7 @@ class GaussianDiffusion(nn.Module):
 
             x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
 
-            # progress.update({'t': i})
-
             if return_diffusion: diffusion.append(x)
-
-        # progress.close()
 
         infos = {}
         if return_diffusion: infos['diffusion'] = torch.stack(diffusion, dim=1)
@@ -444,8 +443,11 @@ class GaussianInvDynDiffusion(nn.Module):
         return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False, return_costs=False, projector=None, constraints=None):
+    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False, return_costs=False, 
+                      projector=None, constraints=None, repeat_last=0):
         device = self.betas.device
+        # device = 'cpu'      # REMOVE
+        # self.model = self.model.to('cpu')      # REMOVE
 
         batch_size = shape[0]
         x = 0.5*torch.randn(shape, device=device)
@@ -454,9 +456,10 @@ class GaussianInvDynDiffusion(nn.Module):
         if return_diffusion: diffusion = [x]
         if return_costs: costs = {}
 
-        # progress = utils.Progress(self.n_timesteps) if verbose else utils.Silent()
-        for i in reversed(range(0, self.n_timesteps)):
-            timesteps = torch.full((batch_size,), i, device=device, dtype=torch.long)
+        last_timestep = -repeat_last if repeat_last > 0 and projector is not None else 0
+        for i in reversed(range(last_timestep, self.n_timesteps)):
+            t = i if i >= 0 else 0
+            timesteps = torch.full((batch_size,), t, device=device, dtype=torch.long)
             x = self.p_sample(x, cond, timesteps, returns)
 
             if projector is not None and i <= projector.diffusion_timestep_threshold * self.n_timesteps:
@@ -468,7 +471,6 @@ class GaussianInvDynDiffusion(nn.Module):
             
             x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
 
-            # progress.update({'t': i})
             if return_diffusion: diffusion.append(x)
 
         infos = {}

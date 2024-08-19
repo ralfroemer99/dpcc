@@ -94,7 +94,7 @@ base = {
         'dynamic_loss': False,
 
         ## loading
-        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}',
+        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}_D{diffusion}',
         'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}',
 
         'diffusion_epoch': 'best',      # 'latest'
