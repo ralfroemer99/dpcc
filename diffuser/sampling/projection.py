@@ -38,24 +38,21 @@ class Projector:
         else:
             self.normalizer = ProjectionNormalizer(observation_normalizer=normalizer.normalizers['observations'])
         
-        if normalizer is not None:
-            if normalizer.normalizers['actions'].__class__.__name__ != 'LimitsNormalizer' or \
-                normalizer.normalizers['observations'].__class__.__name__ != 'LimitsNormalizer':
-                raise ValueError('Only LimitsNormalizer is supported!')
+        # ------------------- ONLY FOR TESTING PROJECTION ------------------
+        # else:
+        #     self.normalizer = normalizer
 
+        # Quadratic cost
         if cost_dims is not None:
             costs = torch.ones(transition_dim, device=self.device) * 1e-3
             for idx in cost_dims:
                 costs[idx] = 1
-            self.Q = torch.diag(torch.tile(costs, (self.horizon, )))                    # Quadratic cost
+            self.Q = torch.diag(torch.tile(costs, (self.horizon, )))
         else:
-            self.Q = torch.eye(transition_dim * horizon, device=self.device)                    # Quadratic cost
+            self.Q = torch.eye(transition_dim * horizon, device=self.device)
 
         if self.normalizer is not None:
-            x_max = self.normalizer.maxs
-            x_min = self.normalizer.mins
-
-            self.Q *= torch.diag(torch.tile(torch.tensor(x_max - x_min, device=self.device) ** 2, (self.horizon, )))
+            self.Q *= torch.diag(torch.tile(torch.tensor(self.normalizer.maxs - self.normalizer.mins, device=self.device) ** 2, (self.horizon, )))
         
         self.A = torch.empty((0, self.transition_dim * self.horizon), device=self.device)   # Equality constraints
         self.b = torch.empty(0, device=self.device)
@@ -122,7 +119,8 @@ class Projector:
             A, b, C, d = self.A_np, self.b_np, self.C_np, self.d_np
 
         if self.skip_initial_state:
-            s_0 = trajectory_reshaped[:self.transition_dim] if batch_size == 1 else trajectory_reshaped[0, :self.transition_dim]    # Current state
+            # s_0 = trajectory_reshaped[:self.transition_dim] if batch_size == 1 else trajectory_reshaped[0, :self.transition_dim]    # Current state
+            s_0 = trajectory_reshaped[0, :self.transition_dim]
             if self.solver == 'proxsuite' or self.solver == 'gurobi':
                 s_0 = s_0.cpu().numpy()
             counter = 0
@@ -172,10 +170,13 @@ class Projector:
                     projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
             sol = torch.tensor(sol_np, device=self.device).reshape(dims)
         elif self.solver == 'gurobi':   # Solve optimization problem with gurobi solver
-            sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
+            sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)     
+
             # Create model --> Put these things in the init method
             model = gp.Model('nonconvex_qp')
-            model.Params.LogToConsole = 0
+            model.setParam('MipFocus', 1)
+            model.setParam('SolutionLimit', 1e5)
+            model.Params.LogToConsole = 1
 
             # Add variables
             tau = model.addMVar(shape=(self.horizon * self.transition_dim), lb=-gp.GRB.INFINITY, ub=gp.GRB.INFINITY, name='tau')
@@ -190,14 +191,22 @@ class Projector:
                     start_idx = t * self.transition_dim
                     end_idx = (t + 1) * self.transition_dim
                     model.addConstr(tau[start_idx: end_idx] @ P @ tau[start_idx: end_idx] + q @ tau[start_idx: end_idx] <= v,
-                                    name=f'obstacle_{t}')
-
-            # Cost function
+                                    name=f'obstacle_{t}')     
+            
             for i in range(batch_size):
-                model.setObjective(0.5 * tau @ Q @ tau + r_np[i] @ tau, gp.GRB.MINIMIZE)
-                start_time = time.time()
+                # Cost function
+                cost = 0.5 * tau @ Q @ tau + r_np[i] @ tau
+                cost += (A @ tau - b) @ (A @ tau - b)
+                model.setObjective(cost, gp.GRB.MINIMIZE)
+                model.update()
+                # Warm start
+                for idx, v in enumerate(model.getVars()):
+                    v.Start = trajectory_np[i][idx]
+                model.update()
+
+                # start_time = time.time()
                 model.optimize()
-                print(f'Projection time for sample {i}:', time.time() - start_time)
+                # print(f'Projection time for sample {i}:', time.time() - start_time)
                 if model.Status == 2:
                     sol_np[i] = np.array(model.getAttr("X"))
                 else:
@@ -413,7 +422,7 @@ class ObstacleConstraints(Constraints):
         """
             Input:
                 constraint_list: list of constraints
-                    e.g. [('sphere_inside', [0, 2] [-1, 5], 1), ('sphere_outside', [1, 3], [0, 1] 4)] -->
+                    e.g. [('sphere_inside', [0, 2] [-1, 5], 1), ('sphere_outside', [1, 3], [0, 1], 4)] -->
                     (x_0 + 1)^2 + (x_2 - 5)^2 <= 1, x_1^2 + (x_3 - 1)^2 >= 4
                     where x_i is the i-th dimension of the state or state-action vectors at time t
             Generate the matrix P and the vector q for:
@@ -448,7 +457,7 @@ class ObstacleConstraints(Constraints):
                     s_min = self.normalizer.mins[dim]
                     P[dim, dim] = delta_s ** 2 / 4
                     q[dim] = delta_s**2 / 2 + delta_s * (s_min - center[dim_counter])
-                    v -= delta_s**2 / 4 + delta_s * (s_min - center[dim_counter]) - (s_min - center[dim_counter]) ** 2
+                    v -= delta_s**2 / 4 + delta_s * (s_min - center[dim_counter]) + (s_min - center[dim_counter]) ** 2
                 else:
                     P[dim, dim] = 1
                     q[dim] = -2 * center[dim_counter]

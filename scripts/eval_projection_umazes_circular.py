@@ -11,7 +11,7 @@ from diffusers import DDPMScheduler, DDIMScheduler
 from diffuser.sampling import Projector
 
 exps = [
-    'pointmaze-umaze-dense-v2'
+    'pointmaze-open-dense-v2'
     # 'antmaze-umaze-v1',
     ]
 
@@ -59,7 +59,8 @@ for exp in exps:
         cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['z'], obs_indices['vx'], obs_indices['vy'], obs_indices['vz']]
         
     constraint_list_obstacles = [
-        ['sphere_outside', [obs_indices['x'], obs_indices['y']], [1, 0], 0.1],
+        # ['sphere_outside', [obs_indices['x'], obs_indices['y']], [0, -0.5], 0.1],
+        ['sphere_outside', [obs_indices['x'], obs_indices['y']], [0, -1.1], 0.1],
     ]
 
     constraint_list = copy(constraint_list_obstacles)
@@ -86,11 +87,7 @@ for exp in exps:
     for constraint in dynamic_constraints:
         constraint_list.append(constraint)
 
-    if 'pointmaze' in exp:
-        seeds = [7, 10]
-        # seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
-    else:
-        seeds = np.arange(2)                   
+    seeds = np.arange(2)                   
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
@@ -149,7 +146,7 @@ for exp in exps:
         fig.suptitle(f'{exp} - {variant}')
 
         action_update_every = 1
-        save_samples_every = 10
+        save_samples_every = 5
 
         # Store a few sampled trajectories
         sampled_trajectories_all = []
@@ -159,6 +156,7 @@ for exp in exps:
         total_violations = 0
         avg_time = np.zeros(n_trials)
         for i in range(n_trials):
+            # print(f'Trial {i}')
             torch.manual_seed(i)
             seed = seeds[i] if ('pointmaze-umaze' in exp) else i
             obs, _ = env.reset(seed=seed)
@@ -264,11 +262,6 @@ for exp in exps:
             # Plot constraints
             axes = [ax[i, 4], ax[i, 5], ax_all[i, variant_idx]]
             for curr_ax in axes:
-                if 'pointmaze' in exp:
-                    curr_ax.add_patch(matplotlib.patches.Rectangle((-1.5, -0.5), 2, 1, color='k', alpha=0.2))
-                else:
-                    curr_ax.add_patch(matplotlib.patches.Rectangle((-6, -2), 8, 4, color='k', alpha=0.2))
-
                 for constraint in constraint_list_obstacles:
                     curr_ax.add_patch(matplotlib.patches.Circle(constraint[2], constraint[3], color='k', alpha=0.2))
 

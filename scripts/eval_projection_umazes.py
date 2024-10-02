@@ -13,33 +13,49 @@ from diffuser.sampling import Projector
 # torch.set_default_device('cpu')
 
 exps = [
-    # 'pointmaze-umaze-dense-v2'
-    'antmaze-umaze-v1',
+    'pointmaze-umaze-dense-v2'
+    # 'antmaze-umaze-v1',
     ]
 
 projection_variants = [
     # 'none',
-    # 'end_safe',     # Projected generative diffusion models
-    # '0p1_safe',
-    # '0p2_safe',
-    # '0p5_safe',
-    # 'full_safe',
-    # 'end_all', 
-    # 'end_all_cost',
-    # 'end_all_cost_repeatlast',
-    # '0p1_all',
-    # '0p1_all_cost',
+    'end_safe',     # Projected generative diffusion models
+    '0p1_safe',
+    '0p2_safe',
+    '0p5_safe',
+    'full_safe',
+    'end_all',
+    'end_all_repeatlast1',
+    'end_all_repeatlast3',
+    'end_all_repeatlast5', 
+    'end_all_cost',
+    'end_all_cost_repeatlast3',
+    'end_all_cost_repeatlast5',
+    '0p1_all',
+    '0p1_all_repeatlast1',
+    '0p1_all_repeatlast3',
+    '0p1_all_repeatlast5',
+    '0p1_all_cost',
     '0p1_all_cost_repeatlast3',
     '0p1_all_cost_repeatlast5',
-    # '0p2_all',
+    '0p2_all',
+    '0p2_all_repeatlast1',
+    '0p2_all_repeatlast3',
+    '0p2_all_repeatlast5',
     '0p2_all_cost',
     '0p2_all_cost_repeatlast3',
     '0p2_all_cost_repeatlast5',
-    # '0p5_all',
+    '0p5_all',
+    '0p5_all_repeatlast1',
+    '0p5_all_repeatlast3',
+    '0p5_all_repeatlast5',
     '0p5_all_cost',
     '0p5_all_cost_repeatlast3',
     '0p5_all_cost_repeatlast5',
-    # 'full_all',
+    'full_all',
+    'full_all_repeatlast1',
+    'full_all_repeatlast3',
+    'full_all_repeatlast5',
     'full_all_cost',
     'full_all_cost_repeatlast3',
     'full_all_cost_repeatlast5',
@@ -99,10 +115,10 @@ for exp in exps:
         safety_constraints = [
             # [[1, -6], [6, -1], 'above'],          # tight
             # [[6, 1], [1, 6], 'below'],            # |
-            # [[1.5, -6], [6, -1.5], 'above'],      # |
-            # [[6, 1.5], [1.5, 6], 'below'],        # v
-            [[1.75, -6], [6, -1.75], 'above'],      # less tight
-            [[6, 1.75], [1.75, 6], 'below'],
+            [[1.5, -6], [6, -1.5], 'above'],      # |
+            [[6, 1.5], [1.5, 6], 'below'],        # v
+            # [[1.75, -6], [6, -1.75], 'above'],      # less tight
+            # [[6, 1.75], [1.75, 6], 'below'],
             # [[2, -6], [6, -2], 'above'],
             # [[6, 2], [2, 6], 'below'],
             ]
@@ -171,7 +187,7 @@ for exp in exps:
         seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]     # Good seeds for pointmaze-umaze-dense-v2: [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
         # seeds = [7, 10, 11, 16, 24]
     else:
-        seeds = np.arange(5)                   
+        seeds = np.arange(100)                   
     n_trials = max(2, len(seeds))
     n_timesteps = 100 if 'pointmaze' in exp else 300
 
@@ -247,6 +263,7 @@ for exp in exps:
         n_violations = 0
         total_violations = 0
         avg_time = np.zeros(n_trials)
+        collision_free_completed = np.ones(n_trials)
         for i in range(n_trials):
             torch.manual_seed(i)
             seed = seeds[i] if ('pointmaze-umaze' in exp) else i
@@ -269,6 +286,7 @@ for exp in exps:
                     if obs @ c[action_dim:] >= d + 1e-3:
                         n_violations += 1
                         total_violations += obs @ c[action_dim:] - d
+                        collision_free_completed[i] = 0
                         break
                 
                 start = time.time()
@@ -299,7 +317,8 @@ for exp in exps:
                     quat = [obs[obs_indices['qx']], obs[obs_indices['qy']], obs[obs_indices['qz']], obs[obs_indices['qw']]]
                     if obs[obs_indices['z']] < 0.3:    # Ant is likely flipped over
                         terminated = True
-                        print('Ant flipped over')
+                        collision_free_completed[i] = 0
+                        # print('Ant flipped over')
                     if dist_to_goal <= 1:
                         info['success'] = True
 
@@ -364,11 +383,14 @@ for exp in exps:
                     curr_ax.add_patch(matplotlib.patches.Polygon(mat, color='c', alpha=0.2))
 
         print(f'Success rate: {n_success / n_trials}')
-        if n_success > 0:
-            print(f'Avg number of steps: {n_steps / n_trials}')
-            print(f'Avg number of constraint violations: {n_violations / n_trials}')
-            print(f'Avg total violation: {total_violations / n_trials}')
+        print(f'Avg number of steps: {n_steps / n_trials}')
+        print(f'Avg number of constraint violations: {n_violations / n_trials}')
+        print(f'Avg total violation: {total_violations / n_trials}')
         print(f'Average computation time per step: {np.mean(avg_time)}')
+        print(f'Collision free completed: {int(collision_free_completed.sum())} / {n_trials}')
+        with open(f'{args.savepath}/results.txt', 'a') as file:
+            file.write(f'{exp} - {variant}\n')
+            file.write(f'SR: {n_success / n_trials}, Avg steps: {n_steps / n_trials}, Avg violations: {round(n_violations / n_trials, 2)}, Avg total violation: {round(total_violations / n_trials, 2)}, Avg time: {round(np.mean(avg_time), 3)}, Collision free completed: {collision_free_completed.sum()} / {n_trials}\n')
 
         fig.savefig(f'{args.savepath}/{variant}.png')   
         plt.close(fig)

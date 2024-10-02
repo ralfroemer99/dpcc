@@ -25,7 +25,7 @@ base = {
     'diffusion': {
         ## model
         'model': 'models.UNet1DTemporalCondModel',
-        'diffusion': 'models.GaussianDiffusion',
+        'diffusion': 'models.GaussianInvDynDiffusion',
         'horizon': 8,
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
@@ -73,7 +73,7 @@ base = {
     'plan': {
         'policy': 'sampling.Policy',
         'max_episode_length': 100,
-        'batch_size': 16,
+        'batch_size': 4,
         'preprocess_fns': [],
         'device': 'cuda',
         'seed': 0,
@@ -86,6 +86,7 @@ base = {
         'exp_name': watch(args_to_watch),
 
         ## diffusion model
+        'diffusion': 'models.GaussianInvDynDiffusion',
         'horizon': 8,    # 8
         'n_diffusion_steps': 20,
         'returns_condition': False,
@@ -93,7 +94,7 @@ base = {
         'dynamic_loss': True,
 
         ## loading
-        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}_E{predict_epsilon}_DL{dynamic_loss}',
+        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}_D{diffusion}',
         'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}',
 
         'diffusion_epoch': 'best',      # 'latest'
