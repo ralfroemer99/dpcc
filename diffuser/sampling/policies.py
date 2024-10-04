@@ -15,10 +15,10 @@ Trajectories = namedtuple('Trajectories', 'actions observations')
 
 class Policy:
 
-    def __init__(self, model, scheduler, normalizer, preprocess_fns=[], test_ret=0, projector=None, **sample_kwargs):
+    def __init__(self, model, normalizer, scheduler=None, preprocess_fns=[], test_ret=0, projector=None, **sample_kwargs):
         self.model = model
         self.scheduler = scheduler,   # 'DDPM' or 'DDIM'
-        self.scheduler = self.scheduler[0]      # No idea why this is needed
+        # self.scheduler = self.scheduler[0]      # No idea why this is needed
         self.normalizer = normalizer
         self.action_dim = model.action_dim
         self.preprocess_fn = get_policy_preprocess_fn(preprocess_fns)

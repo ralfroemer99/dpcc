@@ -1,11 +1,12 @@
 import time
 import multiprocessing
-import gurobipy as gp
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
 import proxsuite
+import gurobipy as gp
 from qpth.qp import QPFunction
+from scipy.optimize import minimize, Bounds
 
 def solve_qp_proxsuite(i, Q_np, r_np, A, b, C, d, horizon, transition_dim):
     qp = proxsuite.proxqp.dense.QP(horizon * transition_dim, A.shape[0], C.shape[0])
@@ -212,6 +213,50 @@ class Projector:
                 else:
                     sol_np[i] = trajectory_np[i]
             
+            sol = torch.tensor(sol_np, device=self.device).reshape(dims)
+        elif self.solver == 'scipy':    # Solve optimization problem with scipy solver
+            sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
+
+            Q_double = Q.astype('double')
+            A_double = A.astype('double')
+            b_double = b.astype('double')
+            C_double = C.astype('double')
+            d_double = d.astype('double')
+            r_np_double = r_np.astype('double')
+            trajectory_np_double = trajectory_np.astype('double')
+            # Constraints
+            constraints = ()
+            for constraint_idx in range(len(self.obstacle_constraints.P_list)):
+                P = self.obstacle_constraints.P_list[constraint_idx]
+                q = self.obstacle_constraints.q_list[constraint_idx]
+                v = self.obstacle_constraints.v_list[constraint_idx]
+                for t in range(1, self.horizon):                        # Obstacle constraints
+                    start_idx = t * self.transition_dim
+                    end_idx = (t + 1) * self.transition_dim
+                    constraints += ({'type': 'ineq', 'fun': lambda x, start_idx=start_idx, end_idx=end_idx: -x[start_idx: end_idx] @ P @ x[start_idx: end_idx] - q @ x[start_idx: end_idx] + v,
+                                     'jac': lambda x, start_idx=start_idx, end_idx=end_idx: np.concatenate([np.zeros(start_idx), -2 * P @ x[start_idx: end_idx] - q, np.zeros(len(x) - end_idx)])},)
+                    # constraints += ({'type': 'ineq', 'fun': lambda x, start_idx=start_idx, end_idx=end_idx: -x[start_idx: end_idx] @ x[start_idx: end_idx] + 0.9,
+                    #                  'jac': lambda x, start_idx=start_idx, end_idx=end_idx: np.concatenate([np.zeros(start_idx), -2 * x[start_idx: end_idx], np.zeros(len(x) - end_idx)])},)
+
+            # constraints += ({'type': 'eq', 'fun': lambda x: -C_double @ x + d_double, 'jac': lambda x: -C_double},)
+            constraints += ({'type': 'eq', 'fun': lambda x: A_double @ x - b_double, 'jac': lambda x: A_double},)
+            for i in range(batch_size):
+                # Cost
+                cost_fun = lambda x: 0.5 * x @ Q_double @ x + r_np_double[i] @ x # + \
+                    # (A_double @ x - b_double) @ (A_double @ x - b_double)
+                jac_cost_fun = lambda x: Q_double @ x + r_np_double[i]
+                # Constraints
+                res = minimize(fun=cost_fun, 
+                               x0=np.ones_like(trajectory_np_double[i]), 
+                               constraints=constraints, 
+                               method='SLSQP', 
+                               jac=jac_cost_fun, 
+                               bounds=Bounds(-5 * np.ones_like(trajectory_np_double[i]), 5 * np.ones_like(trajectory_np_double[i])),
+                            #    tol=1e-6,
+                               options={'maxiter': 1000, 'disp': False})
+
+                sol_np[i] = res.x
+
             sol = torch.tensor(sol_np, device=self.device).reshape(dims)
 
         # print(f'Projection time {self.solver}:', time.time() - start_time)

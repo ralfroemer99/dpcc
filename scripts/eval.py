@@ -1,4 +1,5 @@
 import time
+import yaml
 import torch
 from copy import copy
 import minari
@@ -7,20 +8,45 @@ import matplotlib
 import matplotlib.pyplot as plt
 import diffuser.utils as utils
 from diffuser.sampling import Policy
-from diffusers import DDPMScheduler, DDIMScheduler
 from diffuser.sampling import Projector
 
-exps = [
-    'pointmaze-umaze-dense-v2'
-    # 'antmaze-umaze-v1',
-    ]
+# Load configuration
+with open('config/umazes_eval.yaml', 'r') as file:
+    config = yaml.safe_load(file)
+
+exps = config['exps']
+n_trials = config['n_trials']
+n_timesteps_all = config['n_timesteps']
+dt_all = config['dt']
+seeds_all = config['seeds']
+
+repeat_last = config['repeat_last']
+diffusion_timestep_threshold = config['diffusion_timestep_threshold']
+
+observation_indices = config['observation_indices']
+projection_cost = config['projection_cost']
+constraint_types = config['constraint_types']
+enlarge_constraints_all = config['enlarge_constraints']
+halfspace_constraints = config['halfspace_constraints']
+obstacle_constraints_all = config['obstacle_constraints']
 
 projection_variants = [
-    '0p2_obstacles',
-    'none'
-    ]
+    'none',
+    '0p2_safe',
+    # 'full_safe',
+    # 'end_all',
+    # '0p1_all',
+    # 'full_all',
+]
 
 for exp in exps:
+    robot_name = 'pointmaze' if 'pointmaze' in exp else 'antmaze'
+    n_timesteps = n_timesteps_all[exp]
+    dt = dt_all[robot_name]
+    safety_constraints = halfspace_constraints[exp]
+    enlarge_constraints = enlarge_constraints_all[exp]
+    obstacle_constraints = obstacle_constraints_all[exp]
+
     class Parser(utils.Parser):
         dataset: str = exp
         config: str = 'config.' + exp
@@ -29,122 +55,106 @@ for exp in exps:
     # Get model
     diffusion_experiment = utils.load_diffusion(
         args.loadbase, args.dataset, args.diffusion_loadpath,
-        epoch=args.diffusion_epoch, seed=args.seed,
+        epoch=args.diffusion_epoch, seed=args.seed, device=args.device
     )
-
-    diffusion_losses = diffusion_experiment.losses
     diffusion = diffusion_experiment.diffusion
     dataset = diffusion_experiment.dataset
 
     minari_dataset = minari.load_dataset(exp, download=True)
     env = minari_dataset.recover_environment(eval_env=True) if 'pointmaze' in exp else minari_dataset.recover_environment()    # Set render_mode='human' to visualize the environment
-
-    # Create scheduler
-    scheduler = DDIMScheduler(num_train_timesteps=diffusion.n_timesteps)   
-    scheduler.set_timesteps(20)                         # Steps used for inference
+    if robot_name == 'pointmaze':
+        env.env.env.env.point_env.frame_skip = 2
+    if robot_name == 'antmaze':
+        env.env.env.env.ant_env.frame_skip = 5
 
     # Create projector
     if diffusion.__class__.__name__ == 'GaussianDiffusion':
         trajectory_dim = diffusion.transition_dim
+        action_dim = diffusion.action_dim
     else:
         trajectory_dim = diffusion.observation_dim
+        action_dim = 0
 
-    if 'pointmaze' in exp:
-        obs_indices = {'x': 0, 'y': 1, 'vx': 2, 'vy': 3, 'goal_x': 4, 'goal_y': 5}
-        cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['vx'], obs_indices['vy']]
-    elif 'antmaze' in exp:
-        obs_indices = {'x': 0, 'y': 1, 'z':2, 'qx': 3, 'qy': 4, 'qz': 5, 'qw': 6, 'hip1': 7, 'ankle1': 8, 'hip2': 9, 'ankle2': 10, 
-                       'hip3': 11, 'ankle3': 12, 'hip4': 13, 'ankle4': 14, 'vx': 15, 'vy': 16, 'vz': 17, 'dhip1': 21, 'dankle1': 22,
-                       'dhip2': 23, 'dankle2': 24, 'dhip3': 25, 'dankle3': 26, 'dhip4': 27, 'dankle4': 28, 'goal_x': 29, 'goal_y': 30, }
+    obs_indices = observation_indices[robot_name]
+    if robot_name == 'pointmaze':
+        cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['vx'], obs_indices['vy']] if projection_cost == 'pos_vel' else [obs_indices['x'], obs_indices['y']]      
+    elif robot_name == 'antmaze':
         cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['z'], obs_indices['vx'], obs_indices['vy'], obs_indices['vz']]
-        
-    constraint_list_obstacles = [
-        # ['sphere_outside', [obs_indices['x'], obs_indices['y']], [0, -0.5], 0.1],
-        ['sphere_outside', [obs_indices['x'], obs_indices['y']], [1, 0], 0.1],
-    ]
 
-    constraint_list = copy(constraint_list_obstacles)
+    if diffusion.__class__.__name__ == 'GaussianDiffusion': 
+        for dim in cost_dims:
+            cost_dims[dim] += action_dim
 
-    if 'pointmaze' in exp:
-        dynamic_constraints = [
-            ('deriv', [obs_indices['x'], obs_indices['vx']]),
-            ('deriv', [obs_indices['y'], obs_indices['vy']]),
-        ]
-    elif 'antmaze' in exp:
-        dynamic_constraints = [
-            ('deriv', [obs_indices['x'], obs_indices['vx']]),
-            ('deriv', [obs_indices['y'], obs_indices['vy']]),
-            ('deriv', [obs_indices['z'], obs_indices['vz']]),
-            # ('deriv', [obs_indices['hip1'], obs_indices['dhip1']]),
-            # ('deriv', [obs_indices['ankle1'], obs_indices['dankle1']]),
-            # ('deriv', [obs_indices['hip2'], obs_indices['dhip2']]),
-            # ('deriv', [obs_indices['ankle2'], obs_indices['dankle2']]),
-            # ('deriv', [obs_indices['hip3'], obs_indices['dhip3']]),
-            # ('deriv', [obs_indices['ankle3'], obs_indices['dankle3']]),
-            # ('deriv', [obs_indices['hip4'], obs_indices['dhip4']]),
-            # ('deriv', [obs_indices['ankle4'], obs_indices['dankle4']]),
-        ]
-    for constraint in dynamic_constraints:
-        constraint_list.append(constraint)
+    # -------------------- Load constraints ------------------
+    # Halfspace constraints
+    constraint_list = []
+    if 'halfspace' in constraint_types:
+        for constraint in safety_constraints:
+            C_row, d = utils.formulaze_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, action_dim, obs_indices)
+            constraint_list.append(('ineq', (C_row, d)))
 
-    n_trials = 2
-    if 'pointmaze-umaze' in exp:
-        seeds = [7, 10, 11, 16, 24, 28, 31, 33, 39, 41, 43, 44, 45, 46, 48]
-        seeds = seeds[:n_trials]
-    else:
-        seeds = np.arange(n_trials)                   
-    n_trials = max(2, len(seeds))
-    n_timesteps = 100 if 'pointmaze' in exp else 300
+    # Dynamics constraints
+    if 'dynamics' in constraint_types:
+        if 'pointmaze' in exp:
+            dynamic_constraints = [
+                ('deriv', np.array([obs_indices['x'], obs_indices['vx']]) + action_dim),
+                ('deriv', np.array([obs_indices['y'], obs_indices['vy']]) + action_dim),
+            ]
+        elif 'antmaze' in exp:
+            dynamic_constraints = [
+                ('deriv', np.array([obs_indices['x'], obs_indices['vx']]) + action_dim),
+                ('deriv', np.array([obs_indices['y'], obs_indices['vy']]) + action_dim),
+                ('deriv', np.array([obs_indices['z'], obs_indices['vz']]) + action_dim),
+            ]
 
+        for constraint in dynamic_constraints:
+            constraint_list.append(constraint)
+
+    # Obstacle constraints
+    if 'obstacles' in constraint_types:
+        for constraint in obstacle_constraints:
+            constraint_list.append([
+                constraint['type'], 
+                [obs_indices[constraint['dimensions'][0]] + action_dim, obs_indices[constraint['dimensions'][1]] + action_dim], 
+                constraint['center'], 
+                constraint['radius']
+            ])
+
+    # -------------------- Run experiments ------------------
+    seeds = seeds_all[exp] if 'pointmaze' in exp else np.arange(100)
+    seeds = seeds[:n_trials]
+               
     fig_all, ax_all = plt.subplots(min(n_trials, 10), len(projection_variants), figsize=(20, 20))
     ax_limits = [-1.5, 1.5] if 'pointmaze' in exp else [-6, 6]
 
     for variant_idx, variant in enumerate(projection_variants):
         print(f'------------------------Running {exp} - {variant}----------------------------')
 
-        if variant == 'none':
-            projector = None
-        else:
-            if 'full' in variant:
-                diffusion_timestep_threshold = 1
-            elif '0p1' in variant:
-                diffusion_timestep_threshold = 0.1
-            elif '0p2' in variant:
-                diffusion_timestep_threshold = 0.2
-            elif '0p5' in variant:
-                diffusion_timestep_threshold = 0.5
-            else:
-                diffusion_timestep_threshold = 0
-            dt = 0.02 if 'pointmaze' in exp else 0.05
-            projector = Projector(
-                horizon=args.horizon, 
-                transition_dim=trajectory_dim, 
-                constraint_list=constraint_list, 
-                normalizer=dataset.normalizer, 
-                diffusion_timestep_threshold=diffusion_timestep_threshold,
-                dt=dt,
-                cost_dims=cost_dims,
-                solver='scipy',
-            )
+        # Create projector
+        projector = Projector(
+            horizon=args.horizon, 
+            transition_dim=trajectory_dim, 
+            constraint_list=constraint_list, 
+            normalizer=dataset.normalizer, 
+            diffusion_timestep_threshold=diffusion_timestep_threshold,
+            dt=dt,
+            cost_dims=cost_dims,
+            device=args.device,
+            solver='scipy',
+        )
+        projector = None if variant == 'none' else projector
 
         # Create policy
-        return_costs = 'cost' in variant
-        # TODO: repeat_last
         policy = Policy(
             model=diffusion,
-            scheduler=scheduler,
             normalizer=dataset.normalizer,
             preprocess_fns=args.preprocess_fns,
             test_ret=args.test_ret,
             projector=projector,
             # **sample_kwargs
-            return_costs=return_costs,
+            return_costs=False,
+            repeat_last=repeat_last,
         )    
-
-        if 'pointmaze' in exp:
-            env.env.env.env.point_env.frame_skip = 2
-        if 'antmaze' in exp:
-            env.env.env.env.ant_env.frame_skip = 5
 
         # Run policy
         fig, ax = plt.subplots(min(n_trials, 10), 6, figsize=(20, 20))
@@ -160,10 +170,10 @@ for exp in exps:
         n_violations = 0
         total_violations = 0
         avg_time = np.zeros(n_trials)
+        collision_free_completed = np.ones(n_trials)
         for i in range(n_trials):
-            print(f'Trial {i}')
-            # torch.manual_seed(i)
-            seed = int(seeds[i]) if ('pointmaze-umaze' in exp) else i
+            torch.manual_seed(i)
+            seed = seeds[i] if ('pointmaze-umaze' in exp) else i
             obs, _ = env.reset(seed=seed)
             if 'antmaze' in exp:
                 obs = np.concatenate((obs['achieved_goal'], obs['observation'], obs['desired_goal']))
@@ -175,17 +185,23 @@ for exp in exps:
             sampled_trajectories = []
             disable_projection = True
             for _ in range(n_timesteps):
-                # print(f'Trial {i}, timestep {_}')
                 conditions = {0: obs}
 
                 # Check if a safety constraint is violated
-                for constraint in constraint_list_obstacles:
-                    type = constraint[0]
-                    dims, c, r = constraint[1:]
-                    if np.linalg.norm(obs[dims] - c) <= r:
-                        n_violations += 1
-                        total_violations += np.linalg.norm(obs[dims] - c)
-                        break
+                for constraint in constraint_list:
+                    if constraint[0] == 'ineq':
+                        c, d = constraint[1]
+                        if obs @ c[action_dim:] >= d + 1e-3:
+                            n_violations += 1
+                            total_violations += obs @ c[action_dim:] - d
+                            collision_free_completed[i] = 0
+                            break
+                if 'obstacles' in constraint_types:
+                    for constraint in obstacle_constraints:
+                        if np.linalg.norm(obs[[obs_indices['x'], obs_indices['y']]] - constraint['center']) < constraint['radius']:
+                            n_violations += 1
+                            collision_free_completed[i] = 0
+                            break
                 
                 start = time.time()
                 action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection)
@@ -193,13 +209,16 @@ for exp in exps:
 
                 # Check whether one of the sampled trajectories violates a 
                 disable_projection = True
-                for constraint in constraint_list_obstacles:
-                    type = constraint[0]
-                    dims, c, r = constraint[1:]
-                    for sample in samples.observations:
-                        if np.linalg.norm(sample[:, dims] - c, axis=1).min() <= r:
+                for constraint in constraint_list:
+                    if constraint[0] == 'ineq':
+                        c, d = constraint[1]
+                        if np.any(samples.observations @ c[action_dim:] >= d + 1e-2):   # (Close to) Violation of constraint
                             disable_projection = False
-                            # print('Enabled projection at timestep', _)
+                            break
+                if 'obstacles' in constraint_types:
+                    for constraint in obstacle_constraints:
+                        if np.any(np.linalg.norm(samples.observations[:, :, [obs_indices['x'], obs_indices['y']]] - constraint['center'], axis=-1) < constraint['radius']):
+                            disable_projection = False
                             break
 
                 if _ % save_samples_every == 0:
@@ -217,7 +236,7 @@ for exp in exps:
                     quat = [obs[obs_indices['qx']], obs[obs_indices['qy']], obs[obs_indices['qz']], obs[obs_indices['qw']]]
                     if obs[obs_indices['z']] < 0.3:    # Ant is likely flipped over
                         terminated = True
-                        print('Ant flipped over')
+                        collision_free_completed[i] = 0
                     if dist_to_goal <= 1:
                         info['success'] = True
 
@@ -231,7 +250,6 @@ for exp in exps:
                     break
 
             sampled_trajectories_all.append(sampled_trajectories)
-
             if i >= 10:     # Plot only the first 10 trials
                 continue
             plot_states = ['x', 'y', 'vx', 'vy']
@@ -267,25 +285,37 @@ for exp in exps:
             # Plot constraints
             axes = [ax[i, 4], ax[i, 5], ax_all[i, variant_idx]]
             for curr_ax in axes:
-                if 'pointmaze' in exp:
+                if exp == 'pointmaze-umaze-dense-v2':
                     curr_ax.add_patch(matplotlib.patches.Rectangle((-1.5, -0.5), 2, 1, color='k', alpha=0.2))
-                else:
+                elif exp == 'antmaze-umaze-v1':
                     curr_ax.add_patch(matplotlib.patches.Rectangle((-6, -2), 8, 4, color='k', alpha=0.2))
 
-                for constraint in constraint_list_obstacles:
-                    curr_ax.add_patch(matplotlib.patches.Circle(constraint[2], constraint[3], color='k', alpha=0.2))
+                for constraint in safety_constraints:
+                    mat = np.vstack((constraint[:2], np.zeros(2)))
+                    if 'pointmaze' in exp:
+                        mat[2] = np.array([1.5, -1.5]) if constraint[2] == 'above' else np.array([1.5, 1.5])
+                    elif 'antmaze' in exp:
+                        mat[2] = np.array([6, -6]) if constraint[2] == 'above' else np.array([6, 6])
+                    curr_ax.add_patch(matplotlib.patches.Polygon(mat, color='c', alpha=0.2))
+
+                for constraint in obstacle_constraints:
+                    curr_ax.add_patch(matplotlib.patches.Circle(constraint['center'], constraint['radius'], color='k', alpha=0.2))
 
         print(f'Success rate: {n_success / n_trials}')
-        if n_success > 0:
-            print(f'Avg number of steps: {n_steps / n_trials}')
-            print(f'Avg number of constraint violations: {n_violations / n_trials}')
-            print(f'Avg total violation: {total_violations / n_trials}')
+        print(f'Avg number of steps: {n_steps / n_trials}')
+        print(f'Avg number of constraint violations: {n_violations / n_trials}')
+        print(f'Avg total violation: {total_violations / n_trials}')
         print(f'Average computation time per step: {np.mean(avg_time)}')
+        print(f'Collision free completed: {int(collision_free_completed.sum())} / {n_trials}')
+        with open(f'{args.savepath}/results.txt', 'a') as file:
+            file.write(f'{exp} - {variant}\n')
+            file.write(f'SR: {n_success / n_trials}, Avg steps: {n_steps / n_trials}, Avg violations: {round(n_violations / n_trials, 2)}, Avg total violation: {round(total_violations / n_trials, 2)}, Avg time: {round(np.mean(avg_time), 3)}, Collision free completed: {collision_free_completed.sum()} / {n_trials}\n')
 
-        # fig.savefig(f'{args.savepath}/{variant}.png')   
+        fig.savefig(f'{args.savepath}/{variant}.png')   
+        plt.close(fig)
 
         ax_all[0, variant_idx].set_title(variant)
         env.close()
 
-    fig_all.savefig(f'{args.savepath}/all_circular.png')
+    fig_all.savefig(f'{args.savepath}/all.png')
     plt.show()

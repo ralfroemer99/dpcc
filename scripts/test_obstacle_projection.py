@@ -41,7 +41,7 @@ tau_noisy = tau_noisy.unsqueeze(0)
 
 obstacle_constraints = [
         # ['sphere_outside', [obs_indices['x'], obs_indices['y']], [0, -0.5], 0.1],
-        ['sphere_outside', [0, 1], [-0.1, -0.1], 0.2],
+        ['sphere_outside', [0, 1], [0, -0.1], 0.2],
     ]
 
 dynamic_constraints = [
@@ -55,8 +55,8 @@ for constraint in dynamic_constraints:
 
 normalizer = LimitsNormalizer(tau_noisy[0].cpu().numpy())
 
-projector = Projector(horizon=horizon, transition_dim=transition_dim, constraint_list=constraint_list, normalizer=normalizer, diffusion_timestep_threshold=0.2, dt=dt, solver='gurobi')
-projector_no_normalization = Projector(horizon=horizon, transition_dim=transition_dim, constraint_list=constraint_list, diffusion_timestep_threshold=0.2, dt=dt, solver='gurobi')
+projector = Projector(horizon=horizon, transition_dim=transition_dim, constraint_list=constraint_list, normalizer=normalizer, diffusion_timestep_threshold=0.2, dt=dt, solver='scipy')
+projector_no_normalization = Projector(horizon=horizon, transition_dim=transition_dim, constraint_list=constraint_list, diffusion_timestep_threshold=0.2, dt=dt, solver='scipy')
 
 # Normalizer
 tau_noisy_normalized = torch.tensor(normalizer.normalize(tau_noisy.cpu().numpy()), device='cuda')

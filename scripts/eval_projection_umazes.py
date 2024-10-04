@@ -13,8 +13,8 @@ from diffuser.sampling import Projector
 # torch.set_default_device('cpu')
 
 exps = [
-    'pointmaze-umaze-dense-v2'
-    # 'antmaze-umaze-v1',
+    # 'pointmaze-umaze-dense-v2'
+    'antmaze-umaze-v1',
     ]
 
 projection_variants = [
