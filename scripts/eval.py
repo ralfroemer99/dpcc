@@ -11,41 +11,40 @@ from diffuser.sampling import Policy
 from diffuser.sampling import Projector
 
 # Load configuration
-with open('config/umazes_eval.yaml', 'r') as file:
+with open('config/projection_eval.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
+# General
 exps = config['exps']
+projection_variants = config['projection_variants']
 n_trials = config['n_trials']
-n_timesteps_all = config['n_timesteps']
+
+# Environment
 dt_all = config['dt']
+observation_indices = config['observation_indices']
 seeds_all = config['seeds']
 
+# Constraint projection
 repeat_last = config['repeat_last']
 diffusion_timestep_threshold = config['diffusion_timestep_threshold']
-
-observation_indices = config['observation_indices']
 projection_cost = config['projection_cost']
 constraint_types = config['constraint_types']
 enlarge_constraints_all = config['enlarge_constraints']
 halfspace_constraints = config['halfspace_constraints']
 obstacle_constraints_all = config['obstacle_constraints']
+bounds_all = config['bounds']
 
-projection_variants = [
-    'none',
-    '0p2_safe',
-    # 'full_safe',
-    # 'end_all',
-    # '0p1_all',
-    # 'full_all',
-]
+plot_how_many_combined = config['plot_how_many_combined']
+plot_how_many_individual = config['plot_how_many_individual']
+ax_limits_all = config['ax_limits']
 
 for exp in exps:
     robot_name = 'pointmaze' if 'pointmaze' in exp else 'antmaze'
-    n_timesteps = n_timesteps_all[exp]
     dt = dt_all[robot_name]
-    safety_constraints = halfspace_constraints[exp]
-    enlarge_constraints = enlarge_constraints_all[exp]
+    polytopic_constraints = halfspace_constraints[exp]
+    enlarge_constraints = enlarge_constraints_all[robot_name]
     obstacle_constraints = obstacle_constraints_all[exp]
+    bounds = bounds_all[exp]
 
     class Parser(utils.Parser):
         dataset: str = exp
@@ -69,10 +68,12 @@ for exp in exps:
 
     # Create projector
     if diffusion.__class__.__name__ == 'GaussianDiffusion':
-        trajectory_dim = diffusion.transition_dim
+        # trajectory_dim = diffusion.transition_dim
+        trajectory_dim = diffusion.transition_dim - diffusion.goal_dim
         action_dim = diffusion.action_dim
     else:
-        trajectory_dim = diffusion.observation_dim
+        # trajectory_dim = diffusion.observation_dim
+        trajectory_dim = diffusion.observation_dim - diffusion.goal_dim
         action_dim = 0
 
     obs_indices = observation_indices[robot_name]
@@ -88,12 +89,39 @@ for exp in exps:
     # -------------------- Load constraints ------------------
     # Halfspace constraints
     constraint_list = []
+    constraint_list_polytopic_not_enlarged = []
     if 'halfspace' in constraint_types:
-        for constraint in safety_constraints:
-            C_row, d = utils.formulaze_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, action_dim, obs_indices)
+        for constraint in polytopic_constraints:
+            C_row, d = utils.formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, action_dim, obs_indices)
             constraint_list.append(('ineq', (C_row, d)))
+            C_row, d = utils.formulate_halfspace_constraints(constraint, 0, trajectory_dim, action_dim, obs_indices)
+            constraint_list_polytopic_not_enlarged.append(('ineq', (C_row, d)))
 
+    # Bounds
+    lower_bound = -np.inf * np.ones(trajectory_dim)
+    upper_bound = np.inf * np.ones(trajectory_dim)
+    if 'bounds' in constraint_types:
+        for bound in bounds:
+            for dim_idx, dim in enumerate(bound['dimensions']):
+                if bound['type'] == 'lower':
+                    lower_bound[obs_indices[dim]] = bound['values'][dim_idx]
+                elif bound['type'] == 'upper':
+                    upper_bound[obs_indices[dim]] = bound['values'][dim_idx]
+        constraint_list.append(('lb', lower_bound))
+        constraint_list.append(('ub', upper_bound))
+
+    # Obstacle constraints
+    if 'obstacles' in constraint_types:
+        for constraint in obstacle_constraints:
+            constraint_list.append([
+                constraint['type'], 
+                [obs_indices[constraint['dimensions'][0]] + action_dim, obs_indices[constraint['dimensions'][1]] + action_dim], 
+                constraint['center'], 
+                constraint['radius'] + enlarge_constraints
+            ])
+    
     # Dynamics constraints
+    constraint_list_without_dynamics = copy(constraint_list)
     if 'dynamics' in constraint_types:
         if 'pointmaze' in exp:
             dynamic_constraints = [
@@ -110,39 +138,37 @@ for exp in exps:
         for constraint in dynamic_constraints:
             constraint_list.append(constraint)
 
-    # Obstacle constraints
-    if 'obstacles' in constraint_types:
-        for constraint in obstacle_constraints:
-            constraint_list.append([
-                constraint['type'], 
-                [obs_indices[constraint['dimensions'][0]] + action_dim, obs_indices[constraint['dimensions'][1]] + action_dim], 
-                constraint['center'], 
-                constraint['radius']
-            ])
-
     # -------------------- Run experiments ------------------
-    seeds = seeds_all[exp] if 'pointmaze' in exp else np.arange(100)
+    seeds = seeds_all[exp] if 'pointmaze-umaze' in exp else np.arange(100)
     seeds = seeds[:n_trials]
+
+    n_timesteps = args.max_episode_length
                
-    fig_all, ax_all = plt.subplots(min(n_trials, 10), len(projection_variants), figsize=(20, 20))
-    ax_limits = [-1.5, 1.5] if 'pointmaze' in exp else [-6, 6]
+    fig_all, ax_all = plt.subplots(min(n_trials, plot_how_many_combined), len(projection_variants), figsize=(10 * len(projection_variants), 10 * min(n_trials, plot_how_many_combined)))
+    ax_limits = ax_limits_all[exp]
 
     for variant_idx, variant in enumerate(projection_variants):
         print(f'------------------------Running {exp} - {variant}----------------------------')
 
+        threshold = diffusion_timestep_threshold if not 'last' in variant else 0
+        constraints = constraint_list if not 'no_dynamics' in variant else constraint_list_without_dynamics
+        lb, ub = lower_bound, upper_bound if not 'no_bounds' in variant else None
         # Create projector
         projector = Projector(
             horizon=args.horizon, 
             transition_dim=trajectory_dim, 
-            constraint_list=constraint_list, 
+            goal_dim=diffusion.goal_dim,
+            constraint_list=constraints, 
             normalizer=dataset.normalizer, 
-            diffusion_timestep_threshold=diffusion_timestep_threshold,
+            diffusion_timestep_threshold=threshold,
             dt=dt,
             cost_dims=cost_dims,
             device=args.device,
             solver='scipy',
         )
         projector = None if variant == 'none' else projector
+        temporal_consistency = True if 'consistency' in variant else False
+        repeat_last = 2 if 'repeat' in variant else 0
 
         # Create policy
         policy = Policy(
@@ -157,11 +183,11 @@ for exp in exps:
         )    
 
         # Run policy
-        fig, ax = plt.subplots(min(n_trials, 10), 6, figsize=(20, 20))
+        fig, ax = plt.subplots(min(n_trials, plot_how_many_individual), 6, figsize=(30, 5 * min(n_trials, plot_how_many_individual)))
         fig.suptitle(f'{exp} - {variant}')
 
         action_update_every = 1
-        save_samples_every = 5
+        save_samples_every = args.horizon // 2
 
         # Store a few sampled trajectories
         sampled_trajectories_all = []
@@ -183,41 +209,53 @@ for exp in exps:
             action_buffer = []
 
             sampled_trajectories = []
-            disable_projection = True
+            # disable_projection = True
+            disable_projection = False
             for _ in range(n_timesteps):
+                # print(f'Trial {i}, timestep {_}')
                 conditions = {0: obs}
 
                 # Check if a safety constraint is violated
-                for constraint in constraint_list:
-                    if constraint[0] == 'ineq':
-                        c, d = constraint[1]
-                        if obs @ c[action_dim:] >= d + 1e-3:
-                            n_violations += 1
-                            total_violations += obs @ c[action_dim:] - d
-                            collision_free_completed[i] = 0
-                            break
+                violated_this_timestep = 0
+                if 'halfspace' in constraint_types:
+                    for constraint in constraint_list_polytopic_not_enlarged:
+                        if constraint[0] == 'ineq':
+                            c, d = constraint[1]
+                            if obs[:-diffusion.goal_dim] @ c[action_dim:] >= d:
+                                violated_this_timestep = 1
+                                total_violations += obs[:-diffusion.goal_dim] @ c[action_dim:] - d
+                                collision_free_completed[i] = 0
+                                break
                 if 'obstacles' in constraint_types:
                     for constraint in obstacle_constraints:
                         if np.linalg.norm(obs[[obs_indices['x'], obs_indices['y']]] - constraint['center']) < constraint['radius']:
-                            n_violations += 1
+                            violated_this_timestep = 1
+                            total_violations += constraint['radius'] - np.linalg.norm(obs[[obs_indices['x'], obs_indices['y']]] - constraint['center'])
                             collision_free_completed[i] = 0
                             break
+                n_violations += violated_this_timestep
                 
                 start = time.time()
-                action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection)
+                action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection, temporal_consistency=temporal_consistency)
                 avg_time[i] += time.time() - start
 
-                # Check whether one of the sampled trajectories violates a 
-                disable_projection = True
+                # Check whether one of the sampled trajectories violates a constraint
+                # disable_projection = True
+                disable_projection = False
                 for constraint in constraint_list:
+                    if constraint[0] == 'lb' and np.any(samples.observations[:, 1:, :-diffusion.goal_dim] < constraint[1] - 1e-3) and variant != 'none':
+                        print('Predicted trajectory violates lower bound')
+                    if constraint[0] == 'ub' and np.any(samples.observations[:, 1:, :-diffusion.goal_dim] > constraint[1] + 1e-3) and variant != 'none':
+                        print('Predicted trajectory violates upper bound')
+                    
                     if constraint[0] == 'ineq':
                         c, d = constraint[1]
-                        if np.any(samples.observations @ c[action_dim:] >= d + 1e-2):   # (Close to) Violation of constraint
+                        if np.any(samples.observations[:,:,:-diffusion.goal_dim] @ c[action_dim:] >= d):   # (Close to) Violation of constraint
                             disable_projection = False
                             break
                 if 'obstacles' in constraint_types:
                     for constraint in obstacle_constraints:
-                        if np.any(np.linalg.norm(samples.observations[:, :, [obs_indices['x'], obs_indices['y']]] - constraint['center'], axis=-1) < constraint['radius']):
+                        if np.any(np.linalg.norm(samples.observations[:, :, [obs_indices['x'], obs_indices['y']]] - constraint['center'], axis=-1) < constraint['radius'] + enlarge_constraints):
                             disable_projection = False
                             break
 
@@ -250,7 +288,7 @@ for exp in exps:
                     break
 
             sampled_trajectories_all.append(sampled_trajectories)
-            if i >= 10:     # Plot only the first 10 trials
+            if i >= plot_how_many_individual:     # Plot only the first n trials
                 continue
             plot_states = ['x', 'y', 'vx', 'vy']
 
@@ -290,22 +328,24 @@ for exp in exps:
                 elif exp == 'antmaze-umaze-v1':
                     curr_ax.add_patch(matplotlib.patches.Rectangle((-6, -2), 8, 4, color='k', alpha=0.2))
 
-                for constraint in safety_constraints:
-                    mat = np.vstack((constraint[:2], np.zeros(2)))
-                    if 'pointmaze' in exp:
-                        mat[2] = np.array([1.5, -1.5]) if constraint[2] == 'above' else np.array([1.5, 1.5])
-                    elif 'antmaze' in exp:
-                        mat[2] = np.array([6, -6]) if constraint[2] == 'above' else np.array([6, 6])
-                    curr_ax.add_patch(matplotlib.patches.Polygon(mat, color='c', alpha=0.2))
+                if 'halfspace' in constraint_types:
+                    for constraint in polytopic_constraints:
+                        mat = np.vstack((constraint[:2], np.zeros(2)))
+                        if 'pointmaze' in exp:
+                            mat[2] = np.array([1.5, -1.5]) if constraint[2] == 'above' else np.array([1.5, 1.5])
+                        elif 'antmaze' in exp:
+                            mat[2] = np.array([6, -6]) if constraint[2] == 'above' else np.array([6, 6])
+                        curr_ax.add_patch(matplotlib.patches.Polygon(mat, color='c', alpha=0.2))
 
-                for constraint in obstacle_constraints:
-                    curr_ax.add_patch(matplotlib.patches.Circle(constraint['center'], constraint['radius'], color='k', alpha=0.2))
+                if 'obstacles' in constraint_types:
+                    for constraint in obstacle_constraints:
+                        curr_ax.add_patch(matplotlib.patches.Circle(constraint['center'], constraint['radius'], color='k', alpha=0.2))
 
-        print(f'Success rate: {n_success / n_trials}')
-        print(f'Avg number of steps: {n_steps / n_trials}')
-        print(f'Avg number of constraint violations: {n_violations / n_trials}')
-        print(f'Avg total violation: {total_violations / n_trials}')
-        print(f'Average computation time per step: {np.mean(avg_time)}')
+        print(f'Success rate: {n_success / n_trials:.2f}')
+        print(f'Avg number of steps: {n_steps / n_trials:.2f}')
+        print(f'Avg number of constraint violations: {n_violations / n_trials:.2f}')
+        print(f'Avg total violation: {total_violations / n_trials:.3f}')
+        print(f'Average computation time per step: {np.mean(avg_time):.3f}')
         print(f'Collision free completed: {int(collision_free_completed.sum())} / {n_trials}')
         with open(f'{args.savepath}/results.txt', 'a') as file:
             file.write(f'{exp} - {variant}\n')

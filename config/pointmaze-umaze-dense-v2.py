@@ -1,5 +1,3 @@
-import socket
-
 from diffuser.utils import watch
 
 #------------------------ base ------------------------#
@@ -25,7 +23,7 @@ base = {
     'diffusion': {
         ## model
         'model': 'models.UNet1DTemporalCondModel',
-        'diffusion': 'models.GaussianDiffusion',
+        'diffusion': 'models.GaussianInvDynDiffusion',
         'horizon': 8,
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
@@ -72,7 +70,7 @@ base = {
 
     'plan': {
         'policy': 'sampling.Policy',
-        'max_episode_length': 100,
+        'max_episode_length': 110,      # max_path_length * 1.5,
         'batch_size': 4,
         'preprocess_fns': [],
         'device': 'cuda',
@@ -86,7 +84,7 @@ base = {
         'exp_name': watch(args_to_watch),
 
         ## diffusion model
-        'diffusion': 'models.GaussianDiffusion',
+        'diffusion': 'models.GaussianInvDynDiffusion',
         'horizon': 8,
         'n_diffusion_steps': 20,
         'returns_condition': False,

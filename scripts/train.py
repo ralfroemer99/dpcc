@@ -2,12 +2,14 @@ import diffuser.utils as utils
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
 exps = [
-        'pointmaze-open-dense-v2',
+        # 'pointmaze-open-dense-v2',
         # 'pointmaze-umaze-dense-v2',
         # 'pointmaze-medium-dense-v2',
         # 'pointmaze-large-dense-v2',
         # 'antmaze-umaze-v1',
-        # 'relocate-cloned-v2',
+        'antmaze-umaze-v1',
+        'antmaze-medium-diverse-v1',
+        # 'antmaze-large-diverse-v1'
         ]
 
 for exp in exps:

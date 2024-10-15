@@ -37,7 +37,10 @@ class Policy:
         # Projector
         self.projector = projector
 
-    def __call__(self, conditions, batch_size=1, horizon=16, test_ret=None, constraints=None, disable_projection=False):
+        # Previous observations
+        self.prev_observations = None
+
+    def __call__(self, conditions, batch_size=1, horizon=16, test_ret=None, constraints=None, disable_projection=False, temporal_consistency=False):
         conditions = {k: self.preprocess_fn(v) for k, v in conditions.items()}
         conditions = self._format_conditions(conditions, batch_size)
 
@@ -46,7 +49,7 @@ class Policy:
 
         # Use GaussianDiffusion model with DDPM
         projector = self.projector if not disable_projection else None
-        samples, infos = self.model(conditions, returns=returns, projector=projector, constraints=constraints, **self.sample_kwargs)
+        samples, infos = self.model(conditions, returns=returns, projector=projector, constraints=constraints, horizon=horizon, **self.sample_kwargs)
 
         # if self.return_diffusion:
         #     samples, diffusion = self.model(conditions, returns=returns, projector=projector, constraints=constraints, return_diffusion=True, **self.sample_kwargs)
@@ -69,6 +72,24 @@ class Policy:
 
         trajectories = utils.to_np(samples)
 
+        ## extract observations [ batch_size x horizon x observation_dim ]
+        if not 'diffusion' in infos:
+            normed_observations = trajectories[:, :, self.action_dim:]
+            observations = self.normalizer.unnormalize(normed_observations, 'observations')
+        if 'diffusion' in infos:
+            diffusion_trajectories = utils.to_np(infos['diffusion'])         # Shape: batch_size x T x horizon x transition_dim     
+            observations = self.normalizer.unnormalize(diffusion_trajectories[:, :, :, self.action_dim:], 'observations')
+        
+        # Sort according to similarity with previous observations
+        if temporal_consistency and not disable_projection and self.prev_observations is not None:
+            order = np.argsort(np.linalg.norm(observations[:,:-1,:] - self.prev_observations[:,1:,:], axis=(1,2)))
+            which_trajectory = order[0]
+            observations = observations[order]
+        else:
+            which_trajectory = 0
+        self.prev_observations = np.repeat(np.expand_dims(observations[0], axis=0), batch_size, axis=0)
+
+        ## Extract or calculate action
         if self.inverse_dynamics:
             obs_comb = torch.cat([samples[:, 0, :], samples[:, 1, :]], dim=-1)
             obs_comb = obs_comb.reshape(-1, 2*samples.shape[-1])
@@ -76,7 +97,7 @@ class Policy:
             actions = utils.to_np(actions)
             actions = self.normalizer.unnormalize(actions, 'actions')
             if not 'projection_costs' in infos or infos['projection_costs'] == {}:
-                action = actions[0]     # Change this to follow "safest" trajectory
+                action = actions[which_trajectory]     # Change this to follow "safest" trajectory
             else:
                 costs_total = np.zeros(batch_size)
                 for timestep, cost in infos['projection_costs'].items():
@@ -88,16 +109,8 @@ class Policy:
             actions = self.normalizer.unnormalize(actions, 'actions')
 
             ## extract first action
-            action = actions[0, 0]
+            action = actions[which_trajectory, 0]
 
-        ## extract observations [ batch_size x horizon x observation_dim ]
-        if not 'diffusion' in infos:
-            normed_observations = trajectories[:, :, self.action_dim:]
-            observations = self.normalizer.unnormalize(normed_observations, 'observations')
-        if 'diffusion' in infos:
-            diffusion_trajectories = utils.to_np(infos['diffusion'])         # Shape: batch_size x T x horizon x transition_dim     
-            observations = self.normalizer.unnormalize(diffusion_trajectories[:, :, :, self.action_dim:], 'observations')
-        
         trajectories = Trajectories(actions, observations)
 
         return action, trajectories

@@ -17,8 +17,8 @@ def solve_qp_proxsuite(i, Q_np, r_np, A, b, C, d, horizon, transition_dim):
 
 class Projector:
 
-    def __init__(self, horizon, transition_dim, constraint_list=[], normalizer=None, dt=0.1,
-                 cost_dims=None, skip_initial_state=True, diffusion_timestep_threshold=0.5,
+    def __init__(self, horizon, transition_dim, goal_dim=0, constraint_list=[], normalizer=None, variant='states', 
+                 dt=0.1, cost_dims=None, skip_initial_state=True, diffusion_timestep_threshold=0.5,
                  device='cuda', solver='proxsuite', parallelize=False):
         self.horizon = horizon
         self.transition_dim = transition_dim
@@ -33,11 +33,14 @@ class Projector:
         # Determine whether to include actions in the projection
         if normalizer is None:
             self.normalizer = None
-        elif transition_dim != normalizer.normalizers['observations'].maxs.size:
+        elif variant == 'states':
+            self.normalizer = ProjectionNormalizer(observation_normalizer=normalizer.normalizers['observations'], goal_dim=goal_dim)
+        elif variant == 'states_actions':
+        # elif transition_dim != normalizer.normalizers['observations'].maxs.size:
             self.normalizer = ProjectionNormalizer(observation_normalizer=normalizer.normalizers['observations'], 
-                                                   action_normalizer=normalizer.normalizers['actions'])
+                                                   action_normalizer=normalizer.normalizers['actions'], goal_dim=goal_dim)
         else:
-            self.normalizer = ProjectionNormalizer(observation_normalizer=normalizer.normalizers['observations'])
+            KeyError('Invalid variant. Choose either "states" or "states_actions".')            
         
         # ------------------- ONLY FOR TESTING PROJECTION ------------------
         # else:
@@ -53,14 +56,22 @@ class Projector:
             self.Q = torch.eye(transition_dim * horizon, device=self.device)
 
         if self.normalizer is not None:
-            self.Q *= torch.diag(torch.tile(torch.tensor(self.normalizer.maxs - self.normalizer.mins, device=self.device) ** 2, (self.horizon, )))
+            self.Q *= torch.diag(torch.tile(torch.tensor(self.normalizer.maxs[:transition_dim] - self.normalizer.mins[:transition_dim], device=self.device) ** 2, (self.horizon, )))
         
         self.A = torch.empty((0, self.transition_dim * self.horizon), device=self.device)   # Equality constraints
         self.b = torch.empty(0, device=self.device)
         self.C = torch.empty((0, self.transition_dim * self.horizon), device=self.device)   # Inequality constraints
         self.d = torch.empty(0, device=self.device)
-        self.lb = torch.empty(0, device=self.device)
-        self.ub = torch.empty(0, device=self.device)
+
+        # Bounds
+        # lb = -5 * np.ones(self.transition_dim) if lb is None else lb
+        # ub = 5 * np.ones(self.transition_dim) if ub is None else ub
+        # if self.normalizer is not None:
+        #     lb = self.normalizer.normalize(lb)
+        #     ub = self.normalizer.normalize(ub)
+        # self.lb_np = np.tile(lb, (self.horizon, ))
+        # self.ub_np = np.tile(ub, (self.horizon, ))
+        # self.lb, self.ub = torch.tensor(self.lb_np, device=self.device), torch.tensor(self.ub_np, device=self.device)
 
         self.safety_constraints = SafetyConstraints(horizon=horizon, transition_dim=transition_dim, normalizer=self.normalizer, 
                                                  skip_initial_state=self.skip_initial_state, device=self.device)
@@ -80,8 +91,8 @@ class Projector:
         self.safety_constraints.build_matrices()
         self.dynamic_constraints.build_matrices()
         self.obstacle_constraints.build_matrices()
-        self.append_constraint(self.safety_constraints)
-        self.append_constraint(self.dynamic_constraints)
+        self.append_linear_constraint(self.safety_constraints)
+        self.append_linear_constraint(self.dynamic_constraints)
         self.add_numpy_constraints()     
 
     def project(self, trajectory, constraints=None, return_costs=False):
@@ -130,21 +141,6 @@ class Projector:
                     x_idx = int(constraint[1][0])
                     b[counter * self.horizon] = s_0[x_idx]
                     counter += 1
-
-        # Add additional constraints (if any) --> TODO: For proxsuite, add them to the numpy matrices
-        # if constraints is not None:
-        #     for constraint in constraints:
-        #         constraint.build_matrices()
-        #         if self.solver == 'qpth':
-        #             A = torch.cat([A, constraint.A], dim=0)
-        #             b = torch.cat([b, constraint.b], dim=0)
-        #             C = torch.cat([C, constraint.C], dim=0)
-        #             d = torch.cat([d, constraint.d], dim=0)     
-        #         else:
-        #             A = np.concatenate([A, constraint.A.cpu().numpy()], axis=0)
-        #             b = np.concatenate([b, constraint.b.cpu().numpy()], axis=0)
-        #             C = np.concatenate([C, constraint.C.cpu().numpy()], axis=0)
-        #             d = np.concatenate([d, constraint.d.cpu().numpy()], axis=0) 
 
         projection_costs = np.ones(batch_size, dtype=np.float32)
         # start_time = time.time()
@@ -233,29 +229,38 @@ class Projector:
                 for t in range(1, self.horizon):                        # Obstacle constraints
                     start_idx = t * self.transition_dim
                     end_idx = (t + 1) * self.transition_dim
-                    constraints += ({'type': 'ineq', 'fun': lambda x, start_idx=start_idx, end_idx=end_idx: -x[start_idx: end_idx] @ P @ x[start_idx: end_idx] - q @ x[start_idx: end_idx] + v,
-                                     'jac': lambda x, start_idx=start_idx, end_idx=end_idx: np.concatenate([np.zeros(start_idx), -2 * P @ x[start_idx: end_idx] - q, np.zeros(len(x) - end_idx)])},)
-                    # constraints += ({'type': 'ineq', 'fun': lambda x, start_idx=start_idx, end_idx=end_idx: -x[start_idx: end_idx] @ x[start_idx: end_idx] + 0.9,
-                    #                  'jac': lambda x, start_idx=start_idx, end_idx=end_idx: np.concatenate([np.zeros(start_idx), -2 * x[start_idx: end_idx], np.zeros(len(x) - end_idx)])},)
+                    constraints += ({'type': 'ineq', 'fun': lambda x, start_idx=start_idx, end_idx=end_idx, P=P, q=q, v=v: -x[start_idx: end_idx] @ P @ x[start_idx: end_idx] - q @ x[start_idx: end_idx] + v,
+                                     'jac': lambda x, start_idx=start_idx, end_idx=end_idx, P=P, q=q: np.concatenate([np.zeros(start_idx), -2 * P @ x[start_idx: end_idx] - q, np.zeros(len(x) - end_idx)])},)
 
-            # constraints += ({'type': 'eq', 'fun': lambda x: -C_double @ x + d_double, 'jac': lambda x: -C_double},)
-            constraints += ({'type': 'eq', 'fun': lambda x: A_double @ x - b_double, 'jac': lambda x: A_double},)
+            if C_double.size > 0:
+                constraints += ({'type': 'ineq', 'fun': lambda x: -C_double @ x + d_double, 'jac': lambda x: -C_double},)
+            if A_double.size > 0:
+                constraints += ({'type': 'eq', 'fun': lambda x: A_double @ x - b_double, 'jac': lambda x: A_double},)   
+            # initial_guess = np.random.normal(size=trajectory_np_double.shape)
+            initial_guess = np.ones_like(trajectory_np_double)
             for i in range(batch_size):
                 # Cost
                 cost_fun = lambda x: 0.5 * x @ Q_double @ x + r_np_double[i] @ x # + \
                     # (A_double @ x - b_double) @ (A_double @ x - b_double)
                 jac_cost_fun = lambda x: Q_double @ x + r_np_double[i]
-                # Constraints
                 res = minimize(fun=cost_fun, 
-                               x0=np.ones_like(trajectory_np_double[i]), 
+                            #    x0=trajectory_np_double[i],
+                            #    x0=np.random.rand(trajectory_np_double[i]), 
+                               x0=initial_guess[i],
                                constraints=constraints, 
                                method='SLSQP', 
                                jac=jac_cost_fun, 
                                bounds=Bounds(-5 * np.ones_like(trajectory_np_double[i]), 5 * np.ones_like(trajectory_np_double[i])),
-                            #    tol=1e-6,
+                            #    bounds=Bounds(self.lb_np, self.ub_np),
+                               tol=1e-6,
                                options={'maxiter': 1000, 'disp': False})
 
                 sol_np[i] = res.x
+
+                # if np.linalg.norm(A_double @ res.x - b_double) > 1e-3:
+                #     print('Equality constraints not satisfied!')
+                # if np.any(C_double @ res.x > d_double + 1e-3):
+                #     print('Inequality constraints not satisfied!')
 
             sol = torch.tensor(sol_np, device=self.device).reshape(dims)
 
@@ -265,7 +270,7 @@ class Projector:
         else:
             return sol
 
-    def append_constraint(self, constraint):
+    def append_linear_constraint(self, constraint):
         self.C = torch.cat([self.C, constraint.C], dim=0)
         self.d = torch.cat([self.d, constraint.d], dim=0)
         self.A = torch.cat([self.A, constraint.A], dim=0)
@@ -299,7 +304,6 @@ class Constraints:
     def build_matrices(self):
         pass
 
-
 class SafetyConstraints(Constraints):
 
     def __init__(self, skip_initial_state=True, *args, **kwargs):
@@ -310,7 +314,7 @@ class SafetyConstraints(Constraints):
     def build_matrices(self, constraint_list=None):
         """
             Input:
-                constraint_list: listof constraints
+                constraint_list: list of constraints
                     e.g. [('lb', [-1.0, -inf, 0]), ('ub', [1.0, 2.0, inf]), ('eq', ([0, 1, 1], 1.5)), ('ineq': ([1, 0, 0], 0.5))] -->
                     x_0 in [-1, 1], x_1 in [-inf, 2], x_2 in [0, inf], 0 * x_0 + 1 * x_1 + 1 * x_2 = 1.5, 1 * x_0 + 0 * x_1 + 0 * x_2 <= 0.5,
                     where x_i is the i-th dimension of the state or state-action vectors
@@ -332,8 +336,7 @@ class SafetyConstraints(Constraints):
             bound = constraint[1]
             if type == 'lb' or type == 'ub':
                 for dim in range(len(bound)):
-                    bound = torch.tensor(bound, device=self.device)
-                    if bound[dim] == -torch.inf or bound[dim] == torch.inf:
+                    if bound[dim] == -np.inf or bound[dim] == np.inf:
                         continue
                     
                     mat_append = torch.zeros(self.horizon, self.transition_dim * self.horizon, device=self.device)
@@ -520,22 +523,31 @@ class ObstacleConstraints(Constraints):
 
 
 class ProjectionNormalizer():
-    def __init__(self, observation_normalizer=None, action_normalizer=None):
+    def __init__(self, observation_normalizer=None, action_normalizer=None, goal_dim=0):
         self.observation_normalizer = observation_normalizer
         self.action_normalizer = action_normalizer
+        self.goal_dim = goal_dim
         self.get_limits()
 
     def get_limits(self):
         if self.observation_normalizer is not None and self.action_normalizer is not None:
-            x_max = np.concatenate([self.action_normalizer.maxs, self.observation_normalizer.maxs])
-            x_min = np.concatenate([self.action_normalizer.mins, self.observation_normalizer.mins])
+            x_max = np.concatenate([self.action_normalizer.maxs, self.observation_normalizer.maxs[:-self.goal_dim]])
+            x_min = np.concatenate([self.action_normalizer.mins, self.observation_normalizer.mins[:-self.goal_dim]])
         elif self.observation_normalizer is not None:
-            x_max = self.observation_normalizer.maxs
-            x_min = self.observation_normalizer.mins
+            x_max = self.observation_normalizer.maxs[:-self.goal_dim]
+            x_min = self.observation_normalizer.mins[:-self.goal_dim]
         elif self.action_normalizer is not None:
             x_max = self.action_normalizer.maxs
             x_min = self.action_normalizer.mins
         
         self.maxs = x_max
         self.mins = x_min
+
+    def normalize(self, x):
+        x_normalized = (x - self.mins) / (self.maxs - self.mins) * 2 - 1
+        return x_normalized
+    
+    def unnormalize(self, x_normalized):
+        x = (x_normalized + 1) * (self.maxs - self.mins) / 2 + self.mins
+        return x
                 

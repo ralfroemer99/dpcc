@@ -10,11 +10,11 @@ from diffuser.sampling import Projector
 
 
 exps = [
-    # 'antmaze-umaze-v1',
     # 'pointmaze-open-dense-v2',
-    'pointmaze-umaze-dense-v2',
-    # 'pointmaze-medium-dense-v2',
+    # 'pointmaze-umaze-dense-v2',
+    'pointmaze-medium-dense-v2',
     # 'pointmaze-large-dense-v2'
+        # 'antmaze-medium-diverse-v1',
         ]
 
 for exp in exps:
@@ -80,8 +80,8 @@ for exp in exps:
         env.env.env.env.ant_env.frame_skip = 5
 
     # Run policy
-    n_trials = 10
-    n_timesteps = 500
+    n_trials = 5
+    n_timesteps = args.max_episode_length
     fig, ax = plt.subplots(min(n_trials, 10), 5)
 
     action_update_every = 1
@@ -100,7 +100,7 @@ for exp in exps:
     avg_time = np.zeros(n_trials)
     pos_tracking_errors = np.zeros((n_trials, n_timesteps - 1))
     for i in range(n_trials):
-        obs, _ = env.reset(seed=i+50)
+        obs, _ = env.reset(seed=i)
         if 'antmaze' in exp:
             obs = np.concatenate((obs['achieved_goal'], obs['observation'], obs['desired_goal']))
         else:
@@ -136,8 +136,9 @@ for exp in exps:
             if 'antmaze' in exp:
                 quat = [obs[obs_indices['qx']], obs[obs_indices['qy']], obs[obs_indices['qz']], obs[obs_indices['qw']]]
                 body_orientation = sp.spatial.transform.Rotation.from_quat(quat).as_matrix()
-                if obs[obs_indices['z']] < 0.3:    # Ant is likely flipped over
+                # if obs[obs_indices['z']] < 0.3:    # Ant is likely flipped over
                 # if body_orientation[2, 2] > 0.5:    # Ant is flipped over --> does not work, body_orientation[0, 0] < -0.5 seems to work (no idea why)
+                if body_orientation[0, 0] < -0.5:    
                     terminated = True
                     print('Ant flipped over')
                     print(body_orientation)
@@ -183,7 +184,7 @@ for exp in exps:
     print(f'Maximum tracking error: {np.max(pos_tracking_errors)}')
     print(f'Mean tracking error: {np.mean(pos_tracking_errors[pos_tracking_errors > 0])}')
     
-    fig.savefig(f'logs/last_plot.png')
+    fig.savefig(f'{args.savepath}/no_projections.png')   
     if len(exps) == 1:
         plt.show()     
 

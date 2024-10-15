@@ -36,6 +36,12 @@ class SequenceDataset(torch.utils.data.Dataset):
             if i >= max_n_episodes:
                 break
             fields.add_path(episode)
+            # Don't pad with zeros, instead use the last observation
+            if use_padding:
+                path_length = fields['path_lengths'][i]
+                fields['observations'][i, path_length:] = fields['observations'][i, path_length-1]
+                fields['actions'][i, path_length:] = fields['actions'][i, path_length-1]
+
         fields.finalize()
 
         self.normalizer = DatasetNormalizer(fields, normalizer, path_lengths=fields['path_lengths'])

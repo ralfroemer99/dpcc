@@ -26,7 +26,7 @@ base = {
         ## model
         'model': 'models.UNet1DTemporalCondModel',
         'diffusion': 'models.GaussianInvDynDiffusion',
-        'horizon': 8,
+        'horizon': 16,
         'n_diffusion_steps': 20,
         'loss_type': 'l2',
         'loss_discount': 1.0,
@@ -48,7 +48,7 @@ base = {
         'preprocess_fns': [],
         'clip_denoised': False,
         'use_padding': True,
-        'max_path_length': 400,
+        'max_path_length': 999,    # TODO
         'include_returns': True,
         'returns_scale': 400,   # Determined using rewards from the dataset
         'discount': 0.99,
@@ -72,7 +72,7 @@ base = {
 
     'plan': {
         'policy': 'sampling.Policy',
-        'max_episode_length': 800,      # max_path_length * 2
+        'max_episode_length': 2000,
         'batch_size': 4,
         'preprocess_fns': [],
         'device': 'cuda',

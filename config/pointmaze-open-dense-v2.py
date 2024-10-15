@@ -72,7 +72,7 @@ base = {
 
     'plan': {
         'policy': 'sampling.Policy',
-        'max_episode_length': 100,
+        'max_episode_length': 160,      # max_path_length * 2
         'batch_size': 4,
         'preprocess_fns': [],
         'device': 'cuda',

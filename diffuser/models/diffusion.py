@@ -462,14 +462,16 @@ class GaussianInvDynDiffusion(nn.Module):
             timesteps = torch.full((batch_size,), t, device=device, dtype=torch.long)
             x = self.p_sample(x, cond, timesteps, returns)
 
+            x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
+
             if projector is not None and i <= projector.diffusion_timestep_threshold * self.n_timesteps:
                 if return_costs:
-                    x, projection_costs = projector.project(x, constraints, return_costs=return_costs)
+                    x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints, return_costs=return_costs)
                     if return_costs: costs[i] = projection_costs
                 else:
-                    x = projector.project(x, constraints)
+                    x[:,:,:-self.goal_dim] = projector.project(x[:,:,:-self.goal_dim], constraints)
             
-            x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
+            # x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
 
             if return_diffusion: diffusion.append(x)
 

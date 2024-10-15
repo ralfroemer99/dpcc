@@ -48,7 +48,7 @@ base = {
         'preprocess_fns': [],
         'clip_denoised': False,
         'use_padding': True,
-        'max_path_length': 400,
+        'max_path_length': 800,
         'include_returns': True,
         'returns_scale': 400,   # Determined using rewards from the dataset
         'discount': 0.99,
@@ -72,7 +72,7 @@ base = {
 
     'plan': {
         'policy': 'sampling.Policy',
-        'max_episode_length': 800,      # max_path_length * 2
+        'max_episode_length': 1600,      # max_path_length * 2
         'batch_size': 4,
         'preprocess_fns': [],
         'device': 'cuda',
@@ -87,7 +87,7 @@ base = {
 
         ## diffusion model
         'diffusion': 'models.GaussianInvDynDiffusion',
-        'horizon': 16,
+        'horizon': 8,
         'n_diffusion_steps': 20,
         'returns_condition': False,
         'predict_epsilon': False,
