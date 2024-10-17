@@ -4,7 +4,7 @@ exps: [
   # 'pointmaze-medium-dense-v2',
   # 'antmaze-umaze-v1',
   ]
-n_trials: 4
+n_trials: 2
 
 # Environments
 seeds: {
@@ -30,12 +30,13 @@ repeat_last: 2
 # Projection 
 projection_variants: [
   'none', 
-  'no_dynamics',
+  'vanilla',
+  # 'no_dynamics', # this
   # 'vanilla',
-  'vanilla-last',
+  # 'vanilla-last', # this
   # 'vanilla-repeat',
-  # 'consistency',
-  'consistency-repeat',
+  # 'consistency', # this
+  # 'consistency-repeat', # this
   # 'consistency-repeat-no_bounds',
 ]
 projection_cost: 'pos_vel'

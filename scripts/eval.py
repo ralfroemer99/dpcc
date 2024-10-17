@@ -161,6 +161,7 @@ for exp in exps:
             constraint_list=constraints, 
             normalizer=dataset.normalizer, 
             diffusion_timestep_threshold=threshold,
+            variant='states_actions',
             dt=dt,
             cost_dims=cost_dims,
             device=args.device,

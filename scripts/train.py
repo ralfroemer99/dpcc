@@ -3,12 +3,12 @@ from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
 exps = [
         # 'pointmaze-open-dense-v2',
-        # 'pointmaze-umaze-dense-v2',
+        'pointmaze-umaze-dense-v2',
         # 'pointmaze-medium-dense-v2',
         # 'pointmaze-large-dense-v2',
         # 'antmaze-umaze-v1',
-        'antmaze-umaze-v1',
-        'antmaze-medium-diverse-v1',
+        # 'antmaze-umaze-v1',
+        # 'antmaze-medium-diverse-v1',
         # 'antmaze-large-diverse-v1'
         ]
 
@@ -98,9 +98,11 @@ for exp in exps:
             horizon=args.horizon,
             observation_dim=observation_dim,
             action_dim=action_dim,
+            goal_dim=dataset.goal_dim,
             n_timesteps=args.n_diffusion_steps,
             loss_type=args.loss_type,
             clip_denoised=args.clip_denoised,
+            predict_epsilon=args.predict_epsilon,
             ## loss weighting
             action_weight=args.action_weight,
             loss_discount=args.loss_discount,
