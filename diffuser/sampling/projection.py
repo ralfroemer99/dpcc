@@ -63,16 +63,6 @@ class Projector:
         self.C = torch.empty((0, self.transition_dim * self.horizon), device=self.device)   # Inequality constraints
         self.d = torch.empty(0, device=self.device)
 
-        # Bounds
-        # lb = -5 * np.ones(self.transition_dim) if lb is None else lb
-        # ub = 5 * np.ones(self.transition_dim) if ub is None else ub
-        # if self.normalizer is not None:
-        #     lb = self.normalizer.normalize(lb)
-        #     ub = self.normalizer.normalize(ub)
-        # self.lb_np = np.tile(lb, (self.horizon, ))
-        # self.ub_np = np.tile(ub, (self.horizon, ))
-        # self.lb, self.ub = torch.tensor(self.lb_np, device=self.device), torch.tensor(self.ub_np, device=self.device)
-
         self.safety_constraints = SafetyConstraints(horizon=horizon, transition_dim=transition_dim, normalizer=self.normalizer, 
                                                  skip_initial_state=self.skip_initial_state, device=self.device)
         self.dynamic_constraints = DynamicConstraints(horizon=horizon, transition_dim=transition_dim, normalizer=self.normalizer,
@@ -256,6 +246,7 @@ class Projector:
                                options={'maxiter': 1000, 'disp': False})
 
                 sol_np[i] = res.x
+                projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
 
                 # if np.linalg.norm(A_double @ res.x - b_double) > 1e-3:
                 #     print('Equality constraints not satisfied!')

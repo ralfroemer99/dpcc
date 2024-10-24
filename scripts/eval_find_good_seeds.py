@@ -26,7 +26,7 @@ if 'antmaze' in exp:
     env.env.env.env.ant_env.frame_skip = 5
 
 # Run policy
-n_trials = 100
+n_trials = 200
 
 # Store a few sampled trajectories
 if 'pointmaze' in exp:
@@ -44,4 +44,5 @@ for i in range(n_trials):
         good_seeds.append(i)
     
 print(good_seeds)
+print(len(good_seeds))
 env.close()

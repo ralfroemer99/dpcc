@@ -4,7 +4,7 @@ from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 exps = [
         # 'pointmaze-open-dense-v2',
         'pointmaze-umaze-dense-v2',
-        # 'pointmaze-medium-dense-v2',
+        'pointmaze-medium-dense-v2',
         # 'pointmaze-large-dense-v2',
         # 'antmaze-umaze-v1',
         # 'antmaze-umaze-v1',

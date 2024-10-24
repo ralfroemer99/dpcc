@@ -19,7 +19,7 @@ exps = config['exps']
 projection_variants = config['projection_variants']
 n_trials = config['n_trials']
 
-# Environment
+# Environmentfoal
 dt_all = config['dt']
 observation_indices = config['observation_indices']
 seeds_all = config['seeds']
@@ -71,10 +71,12 @@ for exp in exps:
         # trajectory_dim = diffusion.transition_dim
         trajectory_dim = diffusion.transition_dim - diffusion.goal_dim
         action_dim = diffusion.action_dim
+        diffuser_variant = 'states_actions'
     else:
         # trajectory_dim = diffusion.observation_dim
         trajectory_dim = diffusion.observation_dim - diffusion.goal_dim
         action_dim = 0
+        diffuser_variant = 'states'
 
     obs_indices = observation_indices[robot_name]
     if robot_name == 'pointmaze':
@@ -150,7 +152,7 @@ for exp in exps:
     for variant_idx, variant in enumerate(projection_variants):
         print(f'------------------------Running {exp} - {variant}----------------------------')
 
-        threshold = diffusion_timestep_threshold if not 'last' in variant else 0
+        threshold = diffusion_timestep_threshold if not 'post_processing' in variant else 0
         constraints = constraint_list if not 'no_dynamics' in variant else constraint_list_without_dynamics
         lb, ub = lower_bound, upper_bound if not 'no_bounds' in variant else None
         # Create projector
@@ -161,14 +163,17 @@ for exp in exps:
             constraint_list=constraints, 
             normalizer=dataset.normalizer, 
             diffusion_timestep_threshold=threshold,
-            variant='states_actions',
+            variant=diffuser_variant,
             dt=dt,
             cost_dims=cost_dims,
             device=args.device,
             solver='scipy',
         )
-        projector = None if variant == 'none' else projector
-        temporal_consistency = True if 'consistency' in variant else False
+        projector = None if variant == 'diffuser' else projector
+
+        trajectory_selection = 'random'
+        if 'consistency' in variant: trajectory_selection = 'temporal_consistency'
+        if 'costs' in variant: trajectory_selection = 'minimum_projection_cost'
         repeat_last = 2 if 'repeat' in variant else 0
 
         # Create policy
@@ -178,8 +183,8 @@ for exp in exps:
             preprocess_fns=args.preprocess_fns,
             test_ret=args.test_ret,
             projector=projector,
+            trajectory_selection=trajectory_selection,
             # **sample_kwargs
-            return_costs=False,
             repeat_last=repeat_last,
         )    
 
@@ -191,11 +196,11 @@ for exp in exps:
         save_samples_every = args.horizon // 2
 
         # Store a few sampled trajectories
-        sampled_trajectories_all = []
-        n_success = 0
-        n_steps = 0
-        n_violations = 0
-        total_violations = 0
+        sampled_trajectories_all = []        
+        n_success = np.zeros(n_trials)
+        n_steps = np.zeros(n_trials)
+        n_violations = np.zeros(n_trials)
+        total_violations = np.zeros(n_trials)
         avg_time = np.zeros(n_trials)
         collision_free_completed = np.ones(n_trials)
         for i in range(n_trials):
@@ -224,29 +229,29 @@ for exp in exps:
                             c, d = constraint[1]
                             if obs[:-diffusion.goal_dim] @ c[action_dim:] >= d:
                                 violated_this_timestep = 1
-                                total_violations += obs[:-diffusion.goal_dim] @ c[action_dim:] - d
+                                total_violations[i] += obs[:-diffusion.goal_dim] @ c[action_dim:] - d
                                 collision_free_completed[i] = 0
                                 break
                 if 'obstacles' in constraint_types:
                     for constraint in obstacle_constraints:
                         if np.linalg.norm(obs[[obs_indices['x'], obs_indices['y']]] - constraint['center']) < constraint['radius']:
                             violated_this_timestep = 1
-                            total_violations += constraint['radius'] - np.linalg.norm(obs[[obs_indices['x'], obs_indices['y']]] - constraint['center'])
+                            total_violations[i] += constraint['radius'] - np.linalg.norm(obs[[obs_indices['x'], obs_indices['y']]] - constraint['center'])
                             collision_free_completed[i] = 0
                             break
-                n_violations += violated_this_timestep
+                n_violations[i] += violated_this_timestep
                 
                 start = time.time()
-                action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection, temporal_consistency=temporal_consistency)
+                action, samples = policy(conditions, batch_size=args.batch_size, horizon=args.horizon, disable_projection=disable_projection)
                 avg_time[i] += time.time() - start
 
                 # Check whether one of the sampled trajectories violates a constraint
                 # disable_projection = True
                 disable_projection = False
                 for constraint in constraint_list:
-                    if constraint[0] == 'lb' and np.any(samples.observations[:, 1:, :-diffusion.goal_dim] < constraint[1] - 1e-3) and variant != 'none':
+                    if constraint[0] == 'lb' and np.any(samples.observations[:, 1:, :-diffusion.goal_dim] < constraint[1][action_dim:] - 1e-3) and variant != 'diffuser':
                         print('Predicted trajectory violates lower bound')
-                    if constraint[0] == 'ub' and np.any(samples.observations[:, 1:, :-diffusion.goal_dim] > constraint[1] + 1e-3) and variant != 'none':
+                    if constraint[0] == 'ub' and np.any(samples.observations[:, 1:, :-diffusion.goal_dim] > constraint[1][action_dim:] + 1e-3) and variant != 'diffuser':
                         print('Predicted trajectory violates upper bound')
                     
                     if constraint[0] == 'ineq':
@@ -282,9 +287,9 @@ for exp in exps:
                 obs_buffer.append(obs)
                 action_buffer.append(action)
                 if info['success']:
-                    n_success += 1
+                    n_success[i] = 1
                 if info['success'] or terminated or truncated or _ == n_timesteps - 1:
-                    n_steps += _
+                    n_steps[i] = _
                     avg_time[i] /= _
                     break
 
@@ -326,6 +331,10 @@ for exp in exps:
             for curr_ax in axes:
                 if exp == 'pointmaze-umaze-dense-v2':
                     curr_ax.add_patch(matplotlib.patches.Rectangle((-1.5, -0.5), 2, 1, color='k', alpha=0.2))
+                if exp == 'pointmaze-medium-dense-v2':
+                    bottom_left_corners = [[-1, 2], [0, 2], [-1, 1], [-3, 0], [1, 0], [2, 0], [-1, -1], [-2, -2], [1, -2], [0, -3]]
+                    for corner in bottom_left_corners:
+                        curr_ax.add_patch(matplotlib.patches.Rectangle((corner[0], corner[1]), 1, 1, color='k', alpha=0.2))
                 elif exp == 'antmaze-umaze-v1':
                     curr_ax.add_patch(matplotlib.patches.Rectangle((-6, -2), 8, 4, color='k', alpha=0.2))
 
@@ -336,21 +345,22 @@ for exp in exps:
                             mat[2] = np.array([1.5, -1.5]) if constraint[2] == 'above' else np.array([1.5, 1.5])
                         elif 'antmaze' in exp:
                             mat[2] = np.array([6, -6]) if constraint[2] == 'above' else np.array([6, 6])
-                        curr_ax.add_patch(matplotlib.patches.Polygon(mat, color='c', alpha=0.2))
+                        curr_ax.add_patch(matplotlib.patches.Polygon(mat, color='m', alpha=0.2))
 
                 if 'obstacles' in constraint_types:
                     for constraint in obstacle_constraints:
-                        curr_ax.add_patch(matplotlib.patches.Circle(constraint['center'], constraint['radius'], color='k', alpha=0.2))
+                        curr_ax.add_patch(matplotlib.patches.Circle(constraint['center'], constraint['radius'], color='m', alpha=0.2))
 
-        print(f'Success rate: {n_success / n_trials:.2f}')
-        print(f'Avg number of steps: {n_steps / n_trials:.2f}')
-        print(f'Avg number of constraint violations: {n_violations / n_trials:.2f}')
-        print(f'Avg total violation: {total_violations / n_trials:.3f}')
+        print(f'Success rate: {np.mean(n_success)}')
+        print(f'Avg number of steps: {np.mean(n_steps):.2f} +- {np.std(n_steps):.2f}')
+        print(f'Avg number of constraint violations: {np.mean(n_violations):.2f} +- {np.std(n_violations):.2f}')
+        print(f'Avg total violation: {np.mean(total_violations):.3f} +- {np.std(total_violations):.3f}')
         print(f'Average computation time per step: {np.mean(avg_time):.3f}')
-        print(f'Collision free completed: {int(collision_free_completed.sum())} / {n_trials}')
-        with open(f'{args.savepath}/results.txt', 'a') as file:
-            file.write(f'{exp} - {variant}\n')
-            file.write(f'SR: {n_success / n_trials}, Avg steps: {n_steps / n_trials}, Avg violations: {round(n_violations / n_trials, 2)}, Avg total violation: {round(total_violations / n_trials, 2)}, Avg time: {round(np.mean(avg_time), 3)}, Collision free completed: {collision_free_completed.sum()} / {n_trials}\n')
+        print(f'Collision free completed: {np.mean(collision_free_completed)}')
+        if config['write_to_file']:
+            with open(f'{args.savepath}/results.txt', 'a') as file:
+                file.write(f'{exp} - {variant}\n')
+                file.write(f'SR: {np.mean(n_success)}, Avg steps: {np.mean(n_steps):.2f}, Avg violations: {np.mean(n_violations):.2f}, Avg total violation: {np.mean(total_violations):.3f}, Avg time: {np.mean(avg_time):.3f}, Collision free completed: {collision_free_completed.sum()} / {n_trials}\n')
 
         fig.savefig(f'{args.savepath}/{variant}.png')   
         plt.close(fig)

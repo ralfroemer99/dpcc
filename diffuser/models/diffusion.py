@@ -154,7 +154,7 @@ class GaussianDiffusion(nn.Module):
         return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, cond, returns=None, return_diffusion=False, return_costs=False, 
+    def p_sample_loop(self, shape, cond, returns=None, return_diffusion=False, return_costs=True, 
                       projector=None, constraints=None, repeat_last=0):
         device = self.betas.device
 
@@ -172,14 +172,16 @@ class GaussianDiffusion(nn.Module):
             timesteps = torch.full((batch_size,), t, device=device, dtype=torch.long)
             x = self.p_sample(x, cond, timesteps, returns)
 
+            x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
+
             if projector is not None and t <= projector.diffusion_timestep_threshold * self.n_timesteps:
                 if return_costs:
-                    x, projection_costs = projector.project(x, constraints, return_costs=return_costs)
-                    if return_costs: costs[i] = projection_costs
+                    x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints, return_costs=return_costs)
+                    costs[i] = projection_costs
                 else:
-                    x = projector.project(x, constraints)
+                    x[:,:,:-self.goal_dim] = projector.project(x[:,:,:-self.goal_dim], constraints)
 
-            x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
+            # x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
 
             if return_diffusion: diffusion.append(x)
 
@@ -443,11 +445,9 @@ class GaussianInvDynDiffusion(nn.Module):
         return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False, return_costs=False, 
+    def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False, return_costs=True, 
                       projector=None, constraints=None, repeat_last=0):
         device = self.betas.device
-        # device = 'cpu'      # REMOVE
-        # self.model = self.model.to('cpu')      # REMOVE
 
         batch_size = shape[0]
         x = 0.5*torch.randn(shape, device=device)
@@ -456,6 +456,7 @@ class GaussianInvDynDiffusion(nn.Module):
         if return_diffusion: diffusion = [x]
         if return_costs: costs = {}
 
+        # Denoising process
         last_timestep = -repeat_last if repeat_last > 0 and projector is not None else 0
         for i in reversed(range(last_timestep, self.n_timesteps)):
             t = i if i >= 0 else 0
@@ -467,7 +468,7 @@ class GaussianInvDynDiffusion(nn.Module):
             if projector is not None and i <= projector.diffusion_timestep_threshold * self.n_timesteps:
                 if return_costs:
                     x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints, return_costs=return_costs)
-                    if return_costs: costs[i] = projection_costs
+                    costs[i] = projection_costs
                 else:
                     x[:,:,:-self.goal_dim] = projector.project(x[:,:,:-self.goal_dim], constraints)
             

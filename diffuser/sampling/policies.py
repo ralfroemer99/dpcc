@@ -15,7 +15,8 @@ Trajectories = namedtuple('Trajectories', 'actions observations')
 
 class Policy:
 
-    def __init__(self, model, normalizer, scheduler=None, preprocess_fns=[], test_ret=0, projector=None, **sample_kwargs):
+    def __init__(self, model, normalizer, scheduler=None, preprocess_fns=[], test_ret=0, projector=None, 
+                 trajectory_selection='random', **sample_kwargs):
         self.model = model
         self.scheduler = scheduler,   # 'DDPM' or 'DDIM'
         # self.scheduler = self.scheduler[0]      # No idea why this is needed
@@ -37,10 +38,13 @@ class Policy:
         # Projector
         self.projector = projector
 
+        # Trajectory selection
+        self.trajectory_selection = trajectory_selection        # 'random' or 'temporal_consistency' or 'minimum_projection_cost'
+
         # Previous observations
         self.prev_observations = None
 
-    def __call__(self, conditions, batch_size=1, horizon=16, test_ret=None, constraints=None, disable_projection=False, temporal_consistency=False):
+    def __call__(self, conditions, batch_size=1, horizon=16, test_ret=None, constraints=None, disable_projection=False):
         conditions = {k: self.preprocess_fn(v) for k, v in conditions.items()}
         conditions = self._format_conditions(conditions, batch_size)
 
@@ -81,11 +85,16 @@ class Policy:
             observations = self.normalizer.unnormalize(diffusion_trajectories[:, :, :, self.action_dim:], 'observations')
         
         # Sort according to similarity with previous observations
-        if temporal_consistency and not disable_projection and self.prev_observations is not None:
+        if self.trajectory_selection == 'temporal_consistency' and not disable_projection and self.prev_observations is not None:   # Temporal consistency
             order = np.argsort(np.linalg.norm(observations[:,:-1,:] - self.prev_observations[:,1:,:], axis=(1,2)))
             which_trajectory = order[0]
             observations = observations[order]
-        else:
+        elif self.trajectory_selection == 'minimum_projection_cost' and not disable_projection:                                     # Minimum projection cost
+            costs_total = np.zeros(batch_size)
+            for timestep, cost in infos['projection_costs'].items():
+                costs_total += cost
+            which_trajectory = np.argmin(costs_total)
+        else:                                                                                                                       # Random selection
             which_trajectory = 0
         self.prev_observations = np.repeat(np.expand_dims(observations[0], axis=0), batch_size, axis=0)
 
@@ -96,13 +105,7 @@ class Policy:
             actions = self.inv_model(obs_comb)
             actions = utils.to_np(actions)
             actions = self.normalizer.unnormalize(actions, 'actions')
-            if not 'projection_costs' in infos or infos['projection_costs'] == {}:
-                action = actions[which_trajectory]     # Change this to follow "safest" trajectory
-            else:
-                costs_total = np.zeros(batch_size)
-                for timestep, cost in infos['projection_costs'].items():
-                    costs_total += cost
-                action = actions[np.argmin(costs_total)]
+            action = actions[which_trajectory]
         else:
             ## extract action [ batch_size x horizon x action_dim ]
             actions = trajectories[:, :, :self.action_dim]
