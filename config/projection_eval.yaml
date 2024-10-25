@@ -1,9 +1,10 @@
 # General
 write_to_file: True
 exps: [
-  'pointmaze-umaze-dense-v2',
-  'pointmaze-medium-dense-v2',
+  # 'pointmaze-umaze-dense-v2',
+  # 'pointmaze-medium-dense-v2',
   # 'antmaze-umaze-v1',
+  'd3il-avoiding',
   ]
 n_trials: 2
 
@@ -15,13 +16,15 @@ seeds: {
 
 dt: {
   'pointmaze': 0.02,
-  'antmaze': 0.05
+  'antmaze': 0.05,
+  'avoiding': 0.1,    # GUESS, need to check
 }
 observation_indices: {
   'pointmaze': {'x': 0, 'y': 1, 'vx': 2, 'vy': 3, 'goal_x': 4, 'goal_y': 5},
   'antmaze': {'x': 0, 'y': 1, 'z':2, 'qx': 3, 'qy': 4, 'qz': 5, 'qw': 6, 'hip1': 7, 'ankle1': 8, 'hip2': 9, 'ankle2': 10, 
                'hip3': 11, 'ankle3': 12, 'hip4': 13, 'ankle4': 14, 'vx': 15, 'vy': 16, 'vz': 17, 'dhip1': 21, 'dankle1': 22,
-               'dhip2': 23, 'dankle2': 24, 'dhip3': 25, 'dankle3': 26, 'dhip4': 27, 'dankle4': 28, 'goal_x': 29, 'goal_y': 30, }
+               'dhip2': 23, 'dankle2': 24, 'dhip3': 25, 'dankle3': 26, 'dhip4': 27, 'dankle4': 28, 'goal_x': 29, 'goal_y': 30, },
+  'avoiding': {'x_des': 0, 'y_des': 1, 'x': 2, 'y': 3},
 }
 
 # Policy
@@ -31,21 +34,23 @@ repeat_last: 2
 # Projection 
 projection_variants: [
   # 'diffuser',     # this
-  # 'ours-costs',     # DELETE
+  # 'diffuser',     # this
   # 'post_processing', # this
   # 'no_dynamics', # this
-  'ours-random',
-  'ours-random-repeat',
-  'ours-consistency',
-  'ours-consistency-repeat',
-  'ours-costs',
-  'ours-costs-repeat',
+  'ours-last',
+  # 'ours-random',
+  # 'ours-random-repeat',
+  # 'ours-consistency',
+  # 'ours-consistency-repeat',
+  # 'ours-costs',
+  # 'ours-costs-repeat',
+  'diffuser'
 ]
 projection_cost: 'pos_vel'
 constraint_types: [
-  # 'halfspace', 
-  'obstacles', 
-  'dynamics',
+  'halfspace', 
+  # 'obstacles', 
+  # 'dynamics',
   # 'bounds',
   ]
 enlarge_constraints: {
@@ -62,18 +67,18 @@ halfspace_constraints: {
     # [[1.5, -6], [6, -1.5], 'above'], 
     # [[6, 1.5], [1.5, 6], 'below'],
     ],
+  'd3il-avoiding': [
+    [[0.7, -0.3], [0.8, 0.5], 'above'],     # trivial
+    # [[0.6, -0.3], [0.7, 0.5], 'above'],     # easy
+    # [[0.7, -0.3], [0.4, 0.5], 'below'],   # hard
+    ],
 }
 obstacle_constraints: {
   'pointmaze-umaze-dense-v2': [
-    # {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [1, 0.5], 'radius': 0.1},
-    # {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [1, -0.5], 'radius': 0.1},
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.25, 1.0], 'radius': 0.1},
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [1, -0.5], 'radius': 0.1},
     ],
     'pointmaze-medium-dense-v2': [
-    # {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [-2.6, -1.5], 'radius': 0.1},
-    # {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.4, 1.0], 'radius': 0.1},
-    # {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [-0.5, 0.4], 'radius': 0.1},
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [-1.6, 0.5], 'radius': 0.1},
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [1.5, -0.6], 'radius': 0.1},
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.45, -1], 'radius': 0.1},
@@ -81,6 +86,7 @@ obstacle_constraints: {
   'antmaze-umaze-v1': [
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [4, 0], 'radius': 0.1},
     ],
+  'd3il-avoiding': []
 }
 bounds: {
   'pointmaze-umaze-dense-v2': [
@@ -91,17 +97,18 @@ bounds: {
     {'type': 'lower', 'dimensions': ['vx', 'vy'], 'values': [-4, -4]},
     {'type': 'upper', 'dimensions': ['vx', 'vy'], 'values': [4, 4]},
   ],  
-  'antmaze-umaze-v1': 6,
+  'antmaze-umaze-v1': [],
+  'd3il-avoiding': [],
 }
 
 # Plotting
-plot_how_many_combined: 5
-plot_how_many_individual: 5
+plot_how_many: 10
 ax_limits: {
-  'pointmaze-umaze-dense-v2': [-1.5, 1.5],
-  'pointmaze-medium-dense-v2': [-3, 3],
-  'pointmaze-large-dense-v2': [-5, 5],    # Actually [-5, -3.5], [3.5, 5]
-  'antmaze-umaze-v1': [-6, 6],
-  'antmaze-medium-diverse-v1': [-12, 12],
-  'antmaze-medium-diverse-v1': [-20, 20], # Actually [-20, -14], [14, 20]
+  'pointmaze-umaze-dense-v2': [[-1.5, 1.5], [-1.5, 1.5]],
+  'pointmaze-medium-dense-v2': [[-3, 3], [-3, 3]],
+  'pointmaze-large-dense-v2': [[-5, 5], [-5, 5]],    # Actually [-5, -3.5], [3.5, 5]
+  'antmaze-umaze-v1': [[-6, 6], [-6, 6]],
+  'antmaze-medium-diverse-v1': [[-12, 12],[-12, 12]],
+  'antmaze-medium-diverse-v1': [[-20, 20], [-20, 20]], # Actually [-20, -14], [14, 20]
+  'd3il-avoiding': [[0.2, 0.8], [-0.3, 0.5]]
 }

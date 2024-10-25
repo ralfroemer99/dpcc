@@ -176,10 +176,17 @@ class GaussianDiffusion(nn.Module):
 
             if projector is not None and t <= projector.diffusion_timestep_threshold * self.n_timesteps:
                 if return_costs:
-                    x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints, return_costs=return_costs)
-                    costs[i] = projection_costs
+                    if self.goal_dim > 0:
+                        x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints, return_costs=return_costs)
+                        costs[i] = projection_costs
+                    else:
+                        x, projection_costs = projector.project(x, constraints, return_costs=return_costs)
+                        costs[i] = projection_costs
                 else:
-                    x[:,:,:-self.goal_dim] = projector.project(x[:,:,:-self.goal_dim], constraints)
+                    if self.goal_dim > 0:
+                        x[:,:,:-self.goal_dim] = projector.project(x[:,:,:-self.goal_dim], constraints)
+                    else:
+                        x = projector.project(x, constraints)
 
             # x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
 
@@ -467,11 +474,18 @@ class GaussianInvDynDiffusion(nn.Module):
 
             if projector is not None and i <= projector.diffusion_timestep_threshold * self.n_timesteps:
                 if return_costs:
-                    x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints, return_costs=return_costs)
-                    costs[i] = projection_costs
+                    if self.goal_dim > 0:
+                        x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints, return_costs=return_costs)
+                        costs[i] = projection_costs
+                    else:
+                        x, projection_costs = projector.project(x, constraints, return_costs=return_costs)
+                        costs[i] = projection_costs
                 else:
-                    x[:,:,:-self.goal_dim] = projector.project(x[:,:,:-self.goal_dim], constraints)
-            
+                    if self.goal_dim > 0:
+                        x[:,:,:-self.goal_dim] = projector.project(x[:,:,:-self.goal_dim], constraints)
+                    else:
+                        x = projector.project(x, constraints)
+                                    
             # x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
 
             if return_diffusion: diffusion.append(x)

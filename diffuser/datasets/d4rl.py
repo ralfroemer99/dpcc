@@ -11,6 +11,10 @@ from contextlib import (
     redirect_stdout,
 )
 
+from agents.utils.sim_path import sim_framework_path
+
+MINARI_DATASETS = ['pointmaze-open-dense-v2', 'pointmaze-umaze-dense-v2', 'pointmaze-medium-dense-v2', 'pointmaze-large-dense-v2', 'antmaze-umaze-v1', 'antmaze-medium-diverse-v1', 'antmaze-large-diverse-v1']
+
 @contextmanager
 def suppress_output():
     """
@@ -88,7 +92,7 @@ def sequence_dataset(env, preprocess_fn):
             terminals
     """
 
-    if type(env) == str:
+    if env in MINARI_DATASETS:
         dataset = minari.load_dataset(env, download=True)
         episodes_generator = dataset.iterate_episodes()
 
@@ -127,6 +131,31 @@ def sequence_dataset(env, preprocess_fn):
                     episode_data['terminals'][first_index] = 1
                     for data_key in episode_data:
                         episode_data[data_key] = episode_data[data_key][:first_index+1]
+
+            yield episode_data
+    elif env == 'd3il-avoiding':
+        data_directory = 'environments/dataset/data/data/avoiding/data'
+        data_dir = sim_framework_path(data_directory)
+        state_files = os.listdir(data_dir)
+
+        for file in state_files:
+            with open(os.path.join(data_dir, file), 'rb') as f:
+                env_state = pickle.load(f)
+
+                robot_des_pos = env_state['robot']['des_c_pos'][:, :2]
+                robot_c_pos = env_state['robot']['c_pos'][:, :2]
+
+                input_state = np.concatenate((robot_des_pos, robot_c_pos), axis=-1)
+
+                vel_state = robot_des_pos[1:] - robot_des_pos[:-1]
+                valid_len = len(vel_state)
+
+            episode_data = {
+                'observations': input_state[:-1],
+                'actions': vel_state,
+                'rewards': np.zeros(valid_len),
+                'terminals': np.concatenate((np.zeros(valid_len-1), np.array([1])))
+            }
 
             yield episode_data
     else:

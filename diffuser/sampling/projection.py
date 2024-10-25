@@ -522,11 +522,13 @@ class ProjectionNormalizer():
 
     def get_limits(self):
         if self.observation_normalizer is not None and self.action_normalizer is not None:
-            x_max = np.concatenate([self.action_normalizer.maxs, self.observation_normalizer.maxs[:-self.goal_dim]])
-            x_min = np.concatenate([self.action_normalizer.mins, self.observation_normalizer.mins[:-self.goal_dim]])
+            x_max_obs = self.observation_normalizer.maxs[:-self.goal_dim] if self.goal_dim > 0 else self.observation_normalizer.maxs
+            x_min_obs = self.observation_normalizer.mins[:-self.goal_dim] if self.goal_dim > 0 else self.observation_normalizer.mins
+            x_max = np.concatenate([self.action_normalizer.maxs, x_max_obs])
+            x_min = np.concatenate([self.action_normalizer.mins, x_min_obs])
         elif self.observation_normalizer is not None:
-            x_max = self.observation_normalizer.maxs[:-self.goal_dim]
-            x_min = self.observation_normalizer.mins[:-self.goal_dim]
+            x_max = self.observation_normalizer.maxs[:-self.goal_dim] if self.goal_dim > 0 else self.observation_normalizer.maxs
+            x_min = self.observation_normalizer.mins[:-self.goal_dim] if self.goal_dim > 0 else self.observation_normalizer.mins
         elif self.action_normalizer is not None:
             x_max = self.action_normalizer.maxs
             x_min = self.action_normalizer.mins

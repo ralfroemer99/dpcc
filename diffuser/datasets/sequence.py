@@ -99,7 +99,8 @@ class SequenceDataset(torch.utils.data.Dataset):
         '''
         idx = np.argmax(self.fields.path_lengths > 1)
 
-        self.goal_dim = (self.fields.observations[idx, 0] == self.fields.observations[idx, 1]).sum()
+        # self.goal_dim = (self.fields.observations[idx, 0] == self.fields.observations[idx, 1]).sum()
+        self.goal_dim = (self.fields.observations[idx].std(axis=0) == 0).sum()
 
     def pad_goals(self):
         '''

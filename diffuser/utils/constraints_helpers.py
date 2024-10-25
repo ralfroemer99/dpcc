@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib
 
 def formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, action_dim, obs_indices):
     m = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
@@ -15,3 +16,66 @@ def formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_
         C_row[obs_indices['y'] + action_dim] = -1
         d *= -1
     return C_row, d
+
+def formulate_bounds_constraints(constraint_types, bounds, trajectory_dim, obs_indices):
+    lower_bound = -np.inf * np.ones(trajectory_dim)
+    upper_bound = np.inf * np.ones(trajectory_dim)
+    if 'bounds' in constraint_types:
+        for bound in bounds:
+            for dim_idx, dim in enumerate(bound['dimensions']):
+                if bound['type'] == 'lower':
+                    lower_bound[obs_indices[dim]] = bound['values'][dim_idx]
+                elif bound['type'] == 'upper':
+                    upper_bound[obs_indices[dim]] = bound['values'][dim_idx]
+    return lower_bound, upper_bound
+
+def formulate_dynamics_constraints(exp, obs_indices, action_dim):
+    if 'pointmaze' in exp:
+        dynamic_constraints = [
+            ('deriv', np.array([obs_indices['x'], obs_indices['vx']]) + action_dim),
+            ('deriv', np.array([obs_indices['y'], obs_indices['vy']]) + action_dim),
+        ]
+    elif 'antmaze' in exp:
+        dynamic_constraints = [
+            ('deriv', np.array([obs_indices['x'], obs_indices['vx']]) + action_dim),
+            ('deriv', np.array([obs_indices['y'], obs_indices['vy']]) + action_dim),
+            ('deriv', np.array([obs_indices['z'], obs_indices['vz']]) + action_dim),
+        ]
+    elif 'avoiding' in exp:
+        dynamic_constraints = []
+    return dynamic_constraints
+
+# Plotting
+def plot_environment_constraints(exp, ax):
+    if exp == 'pointmaze-umaze-dense-v2':
+        ax.add_patch(matplotlib.patches.Rectangle((-1.5, -0.5), 2, 1, color='k', alpha=0.2))
+    if exp == 'pointmaze-medium-dense-v2':
+        bottom_left_corners = [[-1, 2], [0, 2], [-1, 1], [-3, 0], [1, 0], [2, 0], [-1, -1], [-2, -2], [1, -2], [0, -3]]
+        for corner in bottom_left_corners:
+            ax.add_patch(matplotlib.patches.Rectangle((corner[0], corner[1]), 1, 1, color='k', alpha=0.2))
+    elif exp == 'antmaze-umaze-v1':
+        ax.add_patch(matplotlib.patches.Rectangle((-6, -2), 8, 4, color='k', alpha=0.2))
+    elif exp == 'd3il-avoiding':
+        centers = [[0.5, -0.1], [0.425, 0.08], [0.575, 0.08], [0.35, 0.26], [0.5, 0.26], [0.65, 0.26]]
+        for center in centers:
+            ax.add_patch(matplotlib.patches.Circle(center, 0.03, color='k', alpha=0.2))
+
+def plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits):
+    for constraint in polytopic_constraints:
+        mat = np.vstack((constraint[:2], np.zeros(2)))
+        if 'pointmaze' in exp:
+            mat[2] = np.array([1.5, -1.5]) if constraint[2] == 'above' else np.array([1.5, 1.5])
+        elif 'antmaze' in exp:
+            mat[2] = np.array([6, -6]) if constraint[2] == 'above' else np.array([6, 6])
+        elif 'avoiding' in exp:
+            # Works for triangles with two vertices on the negative y-axis
+            slope = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
+            if slope > 0 and constraint[2] == 'above':
+                mat[2] = np.array([ax_limits[0][1], ax_limits[1][0]])
+            elif slope > 0 and constraint[2] == 'below':
+                mat[2] = np.array([ax_limits[0][0], ax_limits[1][1]])
+            elif slope < 0 and constraint[2] == 'above':
+                mat[2] = np.array([ax_limits[0][0], ax_limits[1][0]])
+            elif slope < 0 and constraint[2] == 'below':
+                mat[2] = np.array([ax_limits[0][1], ax_limits[1][1]])
+        ax.add_patch(matplotlib.patches.Polygon(mat, color='m', alpha=0.2))
