@@ -6,7 +6,7 @@ exps: [
   # 'antmaze-umaze-v1',
   'd3il-avoiding',
   ]
-n_trials: 2
+n_trials: 10
 
 # Environments
 seeds: {
@@ -17,7 +17,7 @@ seeds: {
 dt: {
   'pointmaze': 0.02,
   'antmaze': 0.05,
-  'avoiding': 0.1,    # GUESS, need to check
+  'avoiding': 1,    # Since a = [delta_x, delta_y] and not [vx, vy]
 }
 observation_indices: {
   'pointmaze': {'x': 0, 'y': 1, 'vx': 2, 'vy': 3, 'goal_x': 4, 'goal_y': 5},
@@ -27,6 +27,12 @@ observation_indices: {
   'avoiding': {'x_des': 0, 'y_des': 1, 'x': 2, 'y': 3},
 }
 
+action_indices: {
+  'pointmaze': {'ax': 0, 'ay': 1},
+  'antmaze': {},  # TODO
+  'avoiding': {'vx': 0, 'vy': 1},
+}
+
 # Policy
 diffusion_timestep_threshold: 0.2
 repeat_last: 2
@@ -34,24 +40,21 @@ repeat_last: 2
 # Projection 
 projection_variants: [
   # 'diffuser',     # this
-  # 'diffuser',     # this
-  # 'post_processing', # this
-  # 'no_dynamics', # this
-  'ours-last',
-  # 'ours-random',
-  # 'ours-random-repeat',
-  # 'ours-consistency',
-  # 'ours-consistency-repeat',
-  # 'ours-costs',
-  # 'ours-costs-repeat',
-  'diffuser'
+  'post_processing', # this
+  'no_dynamics', # this
+  'ours-random',
+  'ours-random-repeat',
+  'ours-consistency',
+  'ours-consistency-repeat',
+  'ours-costs',
+  'ours-costs-repeat',
 ]
 projection_cost: 'pos_vel'
 constraint_types: [
   'halfspace', 
-  # 'obstacles', 
-  # 'dynamics',
-  # 'bounds',
+  'obstacles', 
+  'dynamics',
+  'bounds',
   ]
 enlarge_constraints: {
   'pointmaze': 0.05,
@@ -68,9 +71,12 @@ halfspace_constraints: {
     # [[6, 1.5], [1.5, 6], 'below'],
     ],
   'd3il-avoiding': [
-    [[0.7, -0.3], [0.8, 0.5], 'above'],     # trivial
+    # [[0.7, -0.3], [0.8, 0.5], 'above'],     # trivial
     # [[0.6, -0.3], [0.7, 0.5], 'above'],     # easy
-    # [[0.7, -0.3], [0.4, 0.5], 'below'],   # hard
+    # [[0.75, -0.3], [0.3, 0.5], 'below'],   # hard (\ shape)
+    # [[0.55, -0.3], [0.2, 0.5], 'below'],   # very hard (\ shape)
+    [[0.25, -0.3], [0.7, 0.5], 'below'],     # hard (/ shape)
+    # [[0.45, -0.3], [0.8, 0.5], 'below'],     # very hard (/ shape)
     ],
 }
 obstacle_constraints: {
@@ -86,7 +92,10 @@ obstacle_constraints: {
   'antmaze-umaze-v1': [
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [4, 0], 'radius': 0.1},
     ],
-  'd3il-avoiding': []
+  'd3il-avoiding': [
+    # {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.575, 0.08], 'radius': 0.1},  # second row, right obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.1], 'radius': 0.08},  # first row obstacle larger
+  ]
 }
 bounds: {
   'pointmaze-umaze-dense-v2': [
@@ -98,7 +107,10 @@ bounds: {
     {'type': 'upper', 'dimensions': ['vx', 'vy'], 'values': [4, 4]},
   ],  
   'antmaze-umaze-v1': [],
-  'd3il-avoiding': [],
+  'd3il-avoiding': [
+    {'type': 'lower', 'dimensions': ['vx', 'vy'], 'values': [-0.01, 0]},
+    {'type': 'upper', 'dimensions': ['vx', 'vy'], 'values': [0.01, 0.01]},
+  ],
 }
 
 # Plotting

@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib
 
-def formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, action_dim, obs_indices):
+def formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, act_obs_indices):
     m = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
     n = [-1, 1/m] / np.linalg.norm([-1, 1/m])
     points_enlarged = [constraint[0] + enlarge_constraints * n, constraint[1] + enlarge_constraints * n]
@@ -9,40 +9,44 @@ def formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_
     # d = constraint[0][1] - m * constraint[0][0]
     C_row = np.zeros(trajectory_dim)
     if constraint[2] == 'below':
-        C_row[obs_indices['x'] + action_dim] = -m
-        C_row[obs_indices['y'] + action_dim] = 1
+        C_row[act_obs_indices['x']] = -m
+        C_row[act_obs_indices['y']] = 1
     elif constraint[2] == 'above':
-        C_row[obs_indices['x'] + action_dim] = m
-        C_row[obs_indices['y'] + action_dim] = -1
+        C_row[act_obs_indices['x']] = m
+        C_row[act_obs_indices['y']] = -1
         d *= -1
     return C_row, d
 
-def formulate_bounds_constraints(constraint_types, bounds, trajectory_dim, obs_indices):
+def formulate_bounds_constraints(constraint_types, bounds, trajectory_dim, act_obs_indices):
     lower_bound = -np.inf * np.ones(trajectory_dim)
     upper_bound = np.inf * np.ones(trajectory_dim)
     if 'bounds' in constraint_types:
         for bound in bounds:
             for dim_idx, dim in enumerate(bound['dimensions']):
-                if bound['type'] == 'lower':
-                    lower_bound[obs_indices[dim]] = bound['values'][dim_idx]
-                elif bound['type'] == 'upper':
-                    upper_bound[obs_indices[dim]] = bound['values'][dim_idx]
+                if bound['type'] == 'lower' and dim in act_obs_indices:
+                    lower_bound[act_obs_indices[dim]] = bound['values'][dim_idx]
+                elif bound['type'] == 'upper' and dim in act_obs_indices:
+                    upper_bound[act_obs_indices[dim]] = bound['values'][dim_idx]
     return lower_bound, upper_bound
 
-def formulate_dynamics_constraints(exp, obs_indices, action_dim):
+def formulate_dynamics_constraints(exp, act_obs_indices, action_dim):
+    dynamic_constraints = []
     if 'pointmaze' in exp:
         dynamic_constraints = [
-            ('deriv', np.array([obs_indices['x'], obs_indices['vx']]) + action_dim),
-            ('deriv', np.array([obs_indices['y'], obs_indices['vy']]) + action_dim),
+            ('deriv', np.array([act_obs_indices['x'], act_obs_indices['vx']])),
+            ('deriv', np.array([act_obs_indices['y'], act_obs_indices['vy']])),
         ]
-    elif 'antmaze' in exp:
+    if 'antmaze' in exp:
         dynamic_constraints = [
-            ('deriv', np.array([obs_indices['x'], obs_indices['vx']]) + action_dim),
-            ('deriv', np.array([obs_indices['y'], obs_indices['vy']]) + action_dim),
-            ('deriv', np.array([obs_indices['z'], obs_indices['vz']]) + action_dim),
+            ('deriv', np.array([act_obs_indices['x'], act_obs_indices['vx']])),
+            ('deriv', np.array([act_obs_indices['y'], act_obs_indices['vy']])),
+            ('deriv', np.array([act_obs_indices['z'], act_obs_indices['vz']])),
         ]
-    elif 'avoiding' in exp:
-        dynamic_constraints = []
+    if 'avoiding' in exp and action_dim > 0:
+        dynamic_constraints = [
+            ('deriv', np.array([act_obs_indices['x'], act_obs_indices['vx']])),
+            ('deriv', np.array([act_obs_indices['y'], act_obs_indices['vy']])),
+        ]
     return dynamic_constraints
 
 # Plotting

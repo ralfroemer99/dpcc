@@ -23,6 +23,7 @@ n_trials = config['n_trials']
 # Environmentfoal
 dt_all = config['dt']
 observation_indices = config['observation_indices']
+action_indices = config['action_indices']
 seeds_all = config['seeds']
 
 # Constraint projection
@@ -73,29 +74,37 @@ for exp in exps:
     if robot_name == 'antmaze':
         env.env.env.env.ant_env.frame_skip = 5
 
+    obs_indices = observation_indices[robot_name]
+    act_indices = action_indices[robot_name]
+
     # Create projector
     if diffusion.__class__.__name__ == 'GaussianDiffusion':
         # trajectory_dim = diffusion.transition_dim
         trajectory_dim = diffusion.transition_dim - diffusion.goal_dim
         action_dim = diffusion.action_dim
         diffuser_variant = 'states_actions'
+        obs_indices_updated = {key: val + action_dim for key, val in obs_indices.items()}
+        act_obs_indices = {**act_indices, **obs_indices_updated}
     else:
         # trajectory_dim = diffusion.observation_dim
         trajectory_dim = diffusion.observation_dim - diffusion.goal_dim
         action_dim = 0
         diffuser_variant = 'states'
+        act_obs_indices = obs_indices
 
-    obs_indices = observation_indices[robot_name]
-    if robot_name == 'pointmaze':
-        cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['vx'], obs_indices['vy']] if projection_cost == 'pos_vel' else [obs_indices['x'], obs_indices['y']]      
-    elif robot_name == 'antmaze':
-        cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['z'], obs_indices['vx'], obs_indices['vy'], obs_indices['vz']]
-    elif robot_name == 'avoiding':
-        cost_dims = [obs_indices['x_des'], obs_indices['y_des'], obs_indices['x'], obs_indices['y']]
+    # if robot_name == 'pointmaze':
+    #     # cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['vx'], obs_indices['vy']] if projection_cost == 'pos_vel' else [obs_indices['x'], obs_indices['y']]   
+    #     cost_dims = [act_obs_indices['x'], act_obs_indices['y'], act_obs_indices['vx'], act_obs_indices['vy']] if projection_cost == 'pos_vel' else [act_obs_indices['x'], act_obs_indices['y']]
+    # elif robot_name == 'antmaze':
+    #     # cost_dims = [obs_indices['x'], obs_indices['y'], obs_indices['z'], obs_indices['vx'], obs_indices['vy'], obs_indices['vz']]
+    #     cost_dims = [act_obs_indices['x'], act_obs_indices['y'], act_obs_indices['z'], act_obs_indices['vx'], act_obs_indices['vy'], act_obs_indices['vz']]
+    # elif robot_name == 'avoiding':
+    #     # cost_dims = [obs_indices['x_des'], obs_indices['y_des'], obs_indices['x'], obs_indices['y']]
+    #     cost_dims = [act_obs_indices['x_des'], act_obs_indices['y_des'], act_obs_indices['x'], act_obs_indices['y']]
 
-    if diffusion.__class__.__name__ == 'GaussianDiffusion': 
-        for dim in cost_dims:
-            cost_dims[dim] += action_dim
+    # if diffusion.__class__.__name__ == 'GaussianDiffusion': 
+    #     for dim in cost_dims:
+    #         cost_dims[dim] += action_dim
 
     # -------------------- Load constraints ------------------
     # Halfspace constraints
@@ -103,21 +112,23 @@ for exp in exps:
     constraint_list_polytopic_not_enlarged = []
     if 'halfspace' in constraint_types:
         for constraint in polytopic_constraints:
-            constraint_list.append(('ineq', utils.formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, action_dim, obs_indices)))
-            constraint_list_polytopic_not_enlarged.append(('ineq', utils.formulate_halfspace_constraints(constraint, 0, trajectory_dim, action_dim, obs_indices)))
+            constraint_list.append(('ineq', utils.formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, act_obs_indices)))
+            constraint_list_polytopic_not_enlarged.append(('ineq', utils.formulate_halfspace_constraints(constraint, 0, trajectory_dim, act_obs_indices)))
 
     # Bounds
-    lower_bound, upper_bound = utils.formulate_bounds_constraints(constraint_types, bounds, trajectory_dim, obs_indices)
+    if 'bounds' in constraint_types:
+        lower_bound, upper_bound = utils.formulate_bounds_constraints(constraint_types, bounds, trajectory_dim, act_obs_indices)
+        constraint_list.extend([['lb', lower_bound], ['ub', upper_bound]])
 
     # Obstacle constraints
     if 'obstacles' in constraint_types:
         for constr in obstacle_constraints:
-            constraint_list.append([constraint['type'], [obs_indices[constr['dimensions'][0]] + action_dim, obs_indices[constr['dimensions'][1]] + action_dim], constr['center'], constr['radius'] + enlarge_constraints])
-    
+            constraint_list.append([constr['type'], [act_obs_indices[constr['dimensions'][0]], act_obs_indices[constr['dimensions'][1]]], constr['center'], constr['radius'] + enlarge_constraints])
+
     # Dynamics constraints
     constraint_list_without_dynamics = copy(constraint_list)
     dynamics_constraints = []
-    if 'dynamics' in constraint_types: dynamics_constraints = utils.formulate_dynamics_constraints(exp, obs_indices, action_dim)
+    if 'dynamics' in constraint_types: dynamics_constraints = utils.formulate_dynamics_constraints(exp, act_obs_indices, action_dim)
 
     for constraint in dynamics_constraints:
         constraint_list.append(constraint)
@@ -134,10 +145,10 @@ for exp in exps:
 
         threshold = diffusion_timestep_threshold if not 'post_processing' in variant else 0
         constraints = constraint_list if not 'no_dynamics' in variant else constraint_list_without_dynamics
-        lb, ub = lower_bound, upper_bound if not 'no_bounds' in variant else None
+        # lb, ub = lower_bound, upper_bound if not 'no_bounds' in variant else None
         # Create projector
-        projector = Projector(horizon=args.horizon, transition_dim=trajectory_dim, goal_dim=diffusion.goal_dim, constraint_list=constraints, normalizer=dataset.normalizer, 
-                                diffusion_timestep_threshold=threshold, variant=diffuser_variant, dt=dt, cost_dims=cost_dims, device=args.device, solver='scipy')
+        projector = Projector(horizon=args.horizon, transition_dim=trajectory_dim, action_dim=action_dim, goal_dim=diffusion.goal_dim, constraint_list=constraints, normalizer=dataset.normalizer, 
+                                diffusion_timestep_threshold=threshold, variant=diffuser_variant, dt=dt, cost_dims=None, device=args.device, solver='scipy')        # takes 0.02s
         projector = None if variant == 'diffuser' else projector
 
         trajectory_selection = 'random'
@@ -179,7 +190,7 @@ for exp in exps:
             # Reset environment
             if 'd3il-avoiding' in exp:
                 obs = env.reset()
-                action = env.robot_state()
+                action = env.robot_state()[:2]
                 fixed_z = env.robot_state()[2:]
             else:
                 obs, _ = env.reset(seed=seed)
@@ -211,14 +222,22 @@ for exp in exps:
                                 violated_this_timestep = 1
                                 total_violations[i] += obs_to_check @ c[action_dim:] - d
                                 collision_free_completed[i] = 0
-                                break
+
                 if 'obstacles' in constraint_types:
                     for constraint in obstacle_constraints:
                         if np.linalg.norm(obs[[obs_indices['x'], obs_indices['y']]] - constraint['center']) < constraint['radius']:
                             violated_this_timestep = 1
                             total_violations[i] += constraint['radius'] - np.linalg.norm(obs[[obs_indices['x'], obs_indices['y']]] - constraint['center'])
                             collision_free_completed[i] = 0
-                            break
+                
+                if _ > 0 and 'bounds' in constraint_types:
+                    # if np.any(obs[:-diffusion.goal_dim] < lb - 1e-3) or np.any(obs[:-diffusion.goal_dim] > ub + 1e-3):
+                    act_obs = np.concatenate((action, obs)) if action_dim > 0 else obs
+                    total_violations[i] += np.sum(np.maximum(0, act_obs - upper_bound)) + np.sum(np.maximum(0, lower_bound - act_obs))
+                    if np.sum(np.maximum(0, act_obs - upper_bound)) + np.sum(np.maximum(0, lower_bound - act_obs)) > 0:
+                        print('Bounds violated')
+                    violated_this_timestep = 1
+
                 n_violations[i] += violated_this_timestep
                 
                 # Calculate action
@@ -228,9 +247,8 @@ for exp in exps:
 
                 # Step environment
                 if 'd3il-avoiding' in exp:
-                    action = action + obs[:2]        # Desired next position
-                    action = np.concatenate((action, fixed_z, [0, 1, 0, 0]), axis=0)
-                    obs, rew, terminated, info = env.step(action)
+                    next_pos_des = action + obs[:2] 
+                    obs, rew, terminated, info = env.step(np.concatenate((next_pos_des, fixed_z, [0, 1, 0, 0]), axis=0))
                     success = info[1]
                 else:
                     obs, rew, terminated, truncated, info = env.step(action)
@@ -241,29 +259,29 @@ for exp in exps:
                 elif 'antmaze' in exp:
                     obs = np.concatenate((obs['achieved_goal'], obs['observation'], obs['desired_goal']))
                 elif 'avoiding' in exp:
-                    obs = np.concatenate((action[:2], obs))
+                    obs = np.concatenate((next_pos_des[:2], obs))
 
                 # Check whether one of the sampled trajectories violates a constraint
                 # disable_projection = True
                 disable_projection = False
-                for constraint in constraint_list:
-                    obs_to_check = samples.observations[:, 1:, :-diffusion.goal_dim] if diffusion.goal_dim > 0 else samples.observations[:, 1:]
-                    if constraint[0] == 'lb' and np.any(obs_to_check < constraint[1][action_dim:] - 1e-3) and variant != 'diffuser':
-                        print('Predicted trajectory violates lower bound')
-                    if constraint[0] == 'ub' and np.any(obs_to_check > constraint[1][action_dim:] + 1e-3) and variant != 'diffuser':
-                        print('Predicted trajectory violates upper bound')
+                # for constraint in constraint_list:
+                #     obs_to_check = samples.observations[:, 1:, :-diffusion.goal_dim] if diffusion.goal_dim > 0 else samples.observations[:, 1:]
+                #     if constraint[0] == 'lb' and np.any(obs_to_check < constraint[1][action_dim:] - 1e-3) and variant != 'diffuser':
+                #         print('Predicted trajectory violates lower bound')
+                #     if constraint[0] == 'ub' and np.any(obs_to_check > constraint[1][action_dim:] + 1e-3) and variant != 'diffuser':
+                #         print('Predicted trajectory violates upper bound')
                     
-                    if constraint[0] == 'ineq':
-                        c, d = constraint[1]
-                        obs_to_check = samples.observations[:, :, :-diffusion.goal_dim] if diffusion.goal_dim > 0 else samples.observations
-                        if np.any(obs_to_check @ c[action_dim:] >= d):   # (Close to) Violation of constraint
-                            disable_projection = False
-                            break
-                if 'obstacles' in constraint_types:
-                    for constraint in obstacle_constraints:
-                        if np.any(np.linalg.norm(samples.observations[:, :, [obs_indices['x'], obs_indices['y']]] - constraint['center'], axis=-1) < constraint['radius'] + enlarge_constraints):
-                            disable_projection = False
-                            break
+                #     if constraint[0] == 'ineq':
+                #         c, d = constraint[1]
+                #         obs_to_check = samples.observations[:, :, :-diffusion.goal_dim] if diffusion.goal_dim > 0 else samples.observations
+                #         if np.any(obs_to_check @ c[action_dim:] >= d):   # (Close to) Violation of constraint
+                #             disable_projection = False
+                #             break
+                # if 'obstacles' in constraint_types:
+                #     for constraint in obstacle_constraints:
+                #         if np.any(np.linalg.norm(samples.observations[:, :, [obs_indices['x'], obs_indices['y']]] - constraint['center'], axis=-1) < constraint['radius'] + enlarge_constraints):
+                #             disable_projection = False
+                #             break
 
                 if _ % save_samples_every == 0:
                     sampled_trajectories.append(samples.observations[:, :, :])
@@ -279,8 +297,8 @@ for exp in exps:
 
                 obs_buffer.append(obs)
                 action_buffer.append(action)
-                if success:
-                    n_success[i] = 1
+                if success: n_success[i] = 1
+                if terminated and (not success): collision_free_completed[i] = 0
                 # if success or terminated or truncated or _ == n_timesteps - 1:
                 if success or terminated or _ == args.max_episode_length - 1:
                     n_steps[i] = _

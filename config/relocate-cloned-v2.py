@@ -50,7 +50,7 @@ base = {
 
         ## serialization
         'logbase': logbase,
-        'prefix': 'diffusion/defaults',
+        'prefix': 'diffusion/',
         'exp_name': watch(args_to_watch),
 
         ## training
@@ -87,8 +87,8 @@ base = {
         'use_padding': True,
 
         ## loading
-        'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}_R{returns_condition}',
-        'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}',
+        'diffusion_loadpath': 'f:diffusion/H{horizon}_T{n_diffusion_steps}_R{returns_condition}',
+        'value_loadpath': 'f:values/H{horizon}_T{n_diffusion_steps}',
 
         'diffusion_epoch': 'latest',      # 'latest'
 

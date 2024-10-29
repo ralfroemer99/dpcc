@@ -17,7 +17,7 @@ def solve_qp_proxsuite(i, Q_np, r_np, A, b, C, d, horizon, transition_dim):
 
 class Projector:
 
-    def __init__(self, horizon, transition_dim, goal_dim=0, constraint_list=[], normalizer=None, variant='states', 
+    def __init__(self, horizon, transition_dim, action_dim=0, goal_dim=0, constraint_list=[], normalizer=None, variant='states', 
                  dt=0.1, cost_dims=None, skip_initial_state=True, diffusion_timestep_threshold=0.5,
                  device='cuda', solver='proxsuite', parallelize=False):
         self.horizon = horizon
@@ -48,15 +48,16 @@ class Projector:
 
         # Quadratic cost
         if cost_dims is not None:
-            costs = torch.ones(transition_dim, device=self.device) * 1e-3
+            # costs = torch.ones(transition_dim, device=self.device) * 1e-3
+            costs = torch.ones(transition_dim, device=self.device)
             for idx in cost_dims:
                 costs[idx] = 1
             self.Q = torch.diag(torch.tile(costs, (self.horizon, )))
         else:
             self.Q = torch.eye(transition_dim * horizon, device=self.device)
 
-        if self.normalizer is not None:
-            self.Q *= torch.diag(torch.tile(torch.tensor(self.normalizer.maxs[:transition_dim] - self.normalizer.mins[:transition_dim], device=self.device) ** 2, (self.horizon, )))
+        # if self.normalizer is not None:
+        #     self.Q *= torch.diag(torch.tile(torch.tensor(self.normalizer.maxs[:transition_dim] - self.normalizer.mins[:transition_dim], device=self.device) ** 2, (self.horizon, )))
         
         self.A = torch.empty((0, self.transition_dim * self.horizon), device=self.device)   # Equality constraints
         self.b = torch.empty(0, device=self.device)
@@ -64,7 +65,7 @@ class Projector:
         self.d = torch.empty(0, device=self.device)
 
         self.safety_constraints = SafetyConstraints(horizon=horizon, transition_dim=transition_dim, normalizer=self.normalizer, 
-                                                 skip_initial_state=self.skip_initial_state, device=self.device)
+                                                 skip_initial_state=self.skip_initial_state, action_dim=action_dim, device=self.device)
         self.dynamic_constraints = DynamicConstraints(horizon=horizon, transition_dim=transition_dim, normalizer=self.normalizer,
                                                       skip_initial_state=self.skip_initial_state, dt=self.dt, device=self.device)
         self.obstacle_constraints = ObstacleConstraints(horizon=horizon, transition_dim=transition_dim, normalizer=self.normalizer,
@@ -246,6 +247,8 @@ class Projector:
                                options={'maxiter': 1000, 'disp': False})
 
                 sol_np[i] = res.x
+                if np.any((C_double @ res.x) - d_double > 1e-4):
+                    print('Inequality constraints not satisfied!')
                 projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
 
                 # if np.linalg.norm(A_double @ res.x - b_double) > 1e-3:
@@ -297,9 +300,10 @@ class Constraints:
 
 class SafetyConstraints(Constraints):
 
-    def __init__(self, skip_initial_state=True, *args, **kwargs):
+    def __init__(self, skip_initial_state=True, action_dim=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.skip_initial_state = skip_initial_state
+        self.action_dim = action_dim
         self.constraint_list = []
         
     def build_matrices(self, constraint_list=None):
@@ -344,7 +348,7 @@ class SafetyConstraints(Constraints):
                         mat_append = mat_append * (x_max - x_min) / 2
                         vec_append = vec_append - sign * (x_min + x_max) / 2
 
-                    if self.skip_initial_state:
+                    if self.skip_initial_state and dim >= self.action_dim:
                         mat_append = mat_append[1:]
                         vec_append = vec_append[1:]
 

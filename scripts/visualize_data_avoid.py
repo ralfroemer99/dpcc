@@ -62,6 +62,22 @@ plt.legend()
 plt.show()
 plt.savefig('trajectories.png')
 
+# Plot velocities
+fig, ax = plt.subplots(1, 2, figsize=(10, 6))
+for i in range(actions.shape[0]):
+    x_vel = actions[i, :path_lengths[i], 0]
+    y_vel = actions[i, :path_lengths[i], 1]
+    ax[0].plot(x_vel)
+    ax[1].plot(y_vel)
+ax[0].set_xlabel('Time')
+ax[0].set_ylabel('X Velocity')
+ax[0].set_title('X Velocities')
+ax[1].set_xlabel('Time')
+ax[1].set_ylabel('Y Velocity')
+ax[1].set_title('Y Velocities')
+plt.show()
+plt.savefig('velocities.png')
+
 # Plot episode lengths
 plt.figure(figsize=(10, 6))
 plt.plot(path_lengths, marker='o', linestyle='None')
