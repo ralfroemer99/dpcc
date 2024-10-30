@@ -49,16 +49,18 @@ observations = np.concatenate(inputs)
 actions = np.concatenate(actions)
 
 # Plot all trajectories in the x-y plane
-plt.figure(figsize=(10, 6))
+fig, ax = plt.subplots(figsize=(10, 6))
 for i in range(observations.shape[0]):
     x_coords = observations[i, :path_lengths[i], 0]
     y_coords = observations[i, :path_lengths[i], 1]
-    plt.plot(x_coords, y_coords)
+    ax.plot(x_coords, y_coords)
+centers = [[0.5, -0.1], [0.425, 0.08], [0.575, 0.08], [0.35, 0.26], [0.5, 0.26], [0.65, 0.26]]
+for center in centers:
+    ax.add_patch(matplotlib.patches.Circle(center, 0.025, color='k', alpha=0.2))
 
-plt.xlabel('X')
-plt.ylabel('Y')
-plt.title('Trajectories in the X-Y Plane')
-plt.legend()
+ax.set_xlabel('X')
+ax.set_ylabel('Y')
+ax.set_title('Trajectories in the X-Y Plane')
 plt.show()
 plt.savefig('trajectories.png')
 

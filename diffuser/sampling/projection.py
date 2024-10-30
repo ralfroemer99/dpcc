@@ -247,8 +247,8 @@ class Projector:
                                options={'maxiter': 1000, 'disp': False})
 
                 sol_np[i] = res.x
-                if np.any((C_double @ res.x) - d_double > 1e-4):
-                    print('Inequality constraints not satisfied!')
+                # if np.any((C_double @ res.x) - d_double > 1e-4):
+                #     print('Inequality constraints not satisfied!')
                 projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
 
                 # if np.linalg.norm(A_double @ res.x - b_double) > 1e-3:
@@ -259,10 +259,10 @@ class Projector:
             sol = torch.tensor(sol_np, device=self.device).reshape(dims)
 
         # print(f'Projection time {self.solver}:', time.time() - start_time)
-        if return_costs:
-            return sol, projection_costs    # only implemented for proxsuite and parallelize=False
-        else:
-            return sol
+        # if return_costs:
+        return sol, projection_costs    # only implemented for proxsuite and scipy and parallelize=False
+        # else:
+        #     return sol
 
     def append_linear_constraint(self, constraint):
         self.C = torch.cat([self.C, constraint.C], dim=0)

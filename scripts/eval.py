@@ -60,6 +60,7 @@ for exp in exps:
         epoch=args.diffusion_epoch, seed=args.seed, device=args.device
     )
     diffusion = diffusion_experiment.diffusion
+    diffusion.project_x_t = False
     dataset = diffusion_experiment.dataset
 
     if 'pointmaze' in exp or 'antmaze' in exp:
@@ -183,6 +184,7 @@ for exp in exps:
         total_violations = np.zeros(n_trials)
         avg_time = np.zeros(n_trials)
         collision_free_completed = np.ones(n_trials)
+        pos_tracking_errors = np.zeros((n_trials, args.max_episode_length - 1))
         for i in range(n_trials):
             torch.manual_seed(i)
             seed = seeds[i] if ('pointmaze-umaze' in exp) else i
@@ -234,9 +236,9 @@ for exp in exps:
                     # if np.any(obs[:-diffusion.goal_dim] < lb - 1e-3) or np.any(obs[:-diffusion.goal_dim] > ub + 1e-3):
                     act_obs = np.concatenate((action, obs)) if action_dim > 0 else obs
                     total_violations[i] += np.sum(np.maximum(0, act_obs - upper_bound)) + np.sum(np.maximum(0, lower_bound - act_obs))
-                    if np.sum(np.maximum(0, act_obs - upper_bound)) + np.sum(np.maximum(0, lower_bound - act_obs)) > 0:
-                        print('Bounds violated')
-                    violated_this_timestep = 1
+                    # if np.sum(np.maximum(0, act_obs - upper_bound)) + np.sum(np.maximum(0, lower_bound - act_obs)) > 0:
+                    #     print('Bounds violated')
+                    # violated_this_timestep = 1
 
                 n_violations[i] += violated_this_timestep
                 
@@ -263,7 +265,6 @@ for exp in exps:
 
                 # Check whether one of the sampled trajectories violates a constraint
                 # disable_projection = True
-                disable_projection = False
                 # for constraint in constraint_list:
                 #     obs_to_check = samples.observations[:, 1:, :-diffusion.goal_dim] if diffusion.goal_dim > 0 else samples.observations[:, 1:]
                 #     if constraint[0] == 'lb' and np.any(obs_to_check < constraint[1][action_dim:] - 1e-3) and variant != 'diffuser':
@@ -282,6 +283,11 @@ for exp in exps:
                 #         if np.any(np.linalg.norm(samples.observations[:, :, [obs_indices['x'], obs_indices['y']]] - constraint['center'], axis=-1) < constraint['radius'] + enlarge_constraints):
                 #             disable_projection = False
                 #             break
+
+                # Get tracking error
+                if _ >= 1:
+                    pos_tracking_errors[i, _-1] = np.linalg.norm(obs[obs_indices['x']:obs_indices['y']+1] - desired_next_pos)
+                desired_next_pos = samples.observations[0, 1, [obs_indices['x'], obs_indices['y']]]
 
                 if _ % save_samples_every == 0:
                     sampled_trajectories.append(samples.observations[:, :, :])
@@ -349,6 +355,7 @@ for exp in exps:
         print(f'Avg total violation: {np.mean(total_violations):.3f} +- {np.std(total_violations):.3f}')
         print(f'Average computation time per step: {np.mean(avg_time):.3f}')
         print(f'Collision free completed: {np.mean(collision_free_completed)}')
+        # print(f'Tracking error max: {np.max(pos_tracking_errors)}:.3f, mean: {np.mean(pos_tracking_errors[pos_tracking_errors > 0])}.3f')
         if config['write_to_file']:
             with open(f'{args.savepath}/results.txt', 'a') as file:
                 file.write(f'{exp} - {variant}\n')

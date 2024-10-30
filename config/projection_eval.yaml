@@ -6,7 +6,7 @@ exps: [
   # 'antmaze-umaze-v1',
   'd3il-avoiding',
   ]
-n_trials: 10
+n_trials: 50
 
 # Environments
 seeds: {
@@ -34,20 +34,20 @@ action_indices: {
 }
 
 # Policy
-diffusion_timestep_threshold: 0.2
+diffusion_timestep_threshold: 0.5
 repeat_last: 2
 
 # Projection 
 projection_variants: [
-  # 'diffuser',     # this
+  'diffuser',     # this
   'post_processing', # this
   'no_dynamics', # this
   'ours-random',
-  'ours-random-repeat',
+  # 'ours-random-repeat',
   'ours-consistency',
-  'ours-consistency-repeat',
+  # 'ours-consistency-repeat',
   'ours-costs',
-  'ours-costs-repeat',
+  # 'ours-costs-repeat',
 ]
 projection_cost: 'pos_vel'
 constraint_types: [
@@ -59,6 +59,7 @@ constraint_types: [
 enlarge_constraints: {
   'pointmaze': 0.05,
   'antmaze': 0.03,
+  'avoiding': 0.0,
 }
 halfspace_constraints: {
   'pointmaze-umaze-dense-v2': [
@@ -73,9 +74,9 @@ halfspace_constraints: {
   'd3il-avoiding': [
     # [[0.7, -0.3], [0.8, 0.5], 'above'],     # trivial
     # [[0.6, -0.3], [0.7, 0.5], 'above'],     # easy
-    # [[0.75, -0.3], [0.3, 0.5], 'below'],   # hard (\ shape)
+    # [[0.75, -0.3], [0.35, 0.5], 'below'],   # hard (\ shape)
     # [[0.55, -0.3], [0.2, 0.5], 'below'],   # very hard (\ shape)
-    [[0.25, -0.3], [0.7, 0.5], 'below'],     # hard (/ shape)
+    [[0.2, -0.3], [0.7, 0.5], 'below'],     # hard (/ shape)
     # [[0.45, -0.3], [0.8, 0.5], 'below'],     # very hard (/ shape)
     ],
 }
@@ -94,10 +95,10 @@ obstacle_constraints: {
     ],
   'd3il-avoiding': [
     # {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.575, 0.08], 'radius': 0.1},  # second row, right obstacle larger
-    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.1], 'radius': 0.08},  # first row obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.1], 'radius': 0.06},  # first row obstacle larger
   ]
 }
-bounds: {
+bounds: {   # need to be within the limits of the dataset due to the normalization
   'pointmaze-umaze-dense-v2': [
     {'type': 'lower', 'dimensions': ['vx', 'vy'], 'values': [-4, -4]},
     {'type': 'upper', 'dimensions': ['vx', 'vy'], 'values': [4, 4]},

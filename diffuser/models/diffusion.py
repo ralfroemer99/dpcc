@@ -14,9 +14,8 @@ from .helpers import (
 
 class GaussianDiffusion(nn.Module):
     def __init__(self, model, horizon, observation_dim, action_dim, goal_dim=0, n_timesteps=1000,
-        loss_type='l1', clip_denoised=False, predict_epsilon=True, projector=None,
-        action_weight=1.0, loss_discount=1.0, loss_weights=None, returns_condition=False,
-        condition_guidance_w=0.1,):
+        loss_type='l1', clip_denoised=False, predict_epsilon=True, action_weight=1.0, 
+        loss_discount=1.0, loss_weights=None, returns_condition=False, condition_guidance_w=0.1,):
         super().__init__()
         self.horizon = horizon
         self.observation_dim = observation_dim
@@ -117,7 +116,7 @@ class GaussianDiffusion(nn.Module):
         posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, x_t.shape)
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
-    def p_mean_variance(self, x, cond, t, returns=None):
+    def p_mean_variance(self, x, cond, t, returns=None, projector=None, constraints=None, return_costs=False):
         # if self.model.calc_energy:
         #     assert self.predict_epsilon
         #     x = torch.tensor(x, requires_grad=True)
@@ -135,6 +134,28 @@ class GaussianDiffusion(nn.Module):
         t = t.detach().to(torch.int64)
         x_recon = self.predict_start_from_noise(x, t=t, noise=epsilon)
 
+        # Project
+        projection_costs = None
+        if projector is not None and t[0] <= projector.diffusion_timestep_threshold * self.n_timesteps:
+            # if return_costs:
+            #     if self.goal_dim > 0:
+            #         x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints, return_costs=return_costs)
+            #         costs[i] = projection_costs
+            #     else:
+            #         x, projection_costs = projector.project(x, constraints, return_costs=return_costs)
+            #         costs[i] = projection_costs
+            # else:
+            if self.goal_dim > 0:
+                if return_costs:
+                    x_recon[:,:,:-self.goal_dim], projection_costs = projector.project(x_recon[:,:,:-self.goal_dim], constraints)
+                else:
+                    x_recon[:,:,:-self.goal_dim] = projector.project(x_recon[:,:,:-self.goal_dim], constraints)
+            else:
+                if return_costs:
+                    x_recon, projection_costs = projector.project(x_recon, constraints)
+                else:
+                    x_recon = projector.project(x_recon, constraints)
+
         if self.clip_denoised:
             x_recon.clamp_(-1., 1.)
         else:
@@ -142,20 +163,20 @@ class GaussianDiffusion(nn.Module):
 
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(
                 x_start=x_recon, x_t=x, t=t)
-        return model_mean, posterior_variance, posterior_log_variance
+        return model_mean, posterior_variance, posterior_log_variance, projection_costs
 
     @torch.no_grad()
-    def p_sample(self, x, cond, t, returns=None):
+    def p_sample(self, x, cond, t, returns=None, projector=None, constraints=None, return_costs=False):
         b, *_, device = *x.shape, x.device
-        model_mean, _, model_log_variance = self.p_mean_variance(x=x, cond=cond, t=t, returns=returns)
+        model_mean, _, model_log_variance, projection_costs = self.p_mean_variance(x=x, cond=cond, t=t, returns=returns, projector=projector, constraints=constraints, return_costs=return_costs)
         noise = 0.5*torch.randn_like(x)
         # no noise when t == 0
         nonzero_mask = (1 - (t == 0).float()).reshape(b, *((1,) * (len(x.shape) - 1)))
-        return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
+        return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise, projection_costs
 
     @torch.no_grad()
     def p_sample_loop(self, shape, cond, returns=None, return_diffusion=False, return_costs=True, 
-                      projector=None, constraints=None, repeat_last=0):
+                      projector=None, constraints=None, project_x_t=True, repeat_last=0):
         device = self.betas.device
 
         batch_size = shape[0]
@@ -170,11 +191,15 @@ class GaussianDiffusion(nn.Module):
         for i in reversed(range(last_timestep, self.n_timesteps)):
             t = i if i >= 0 else 0
             timesteps = torch.full((batch_size,), t, device=device, dtype=torch.long)
-            x = self.p_sample(x, cond, timesteps, returns)
+            if projector is None or project_x_t:
+                x, _ = self.p_sample(x, cond, timesteps, returns)
+            else:
+                x, projection_costs = self.p_sample(x, cond, timesteps, returns, projector=projector, constraints=constraints)
+                costs[i] = projection_costs
 
             x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
 
-            if projector is not None and t <= projector.diffusion_timestep_threshold * self.n_timesteps:
+            if projector is not None and project_x_t and t <= projector.diffusion_timestep_threshold * self.n_timesteps:
                 if return_costs:
                     if self.goal_dim > 0:
                         x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints, return_costs=return_costs)
@@ -420,7 +445,7 @@ class GaussianInvDynDiffusion(nn.Module):
         posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, x_t.shape)
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
-    def p_mean_variance(self, x, cond, t, returns=None):
+    def p_mean_variance(self, x, cond, t, returns=None, projector=None, constraints=None, return_costs=False):
         if self.returns_condition:
             # epsilon could be epsilon or x0 itself
             epsilon_cond = self.model(x, cond, t, returns, use_dropout=False)
@@ -433,6 +458,28 @@ class GaussianInvDynDiffusion(nn.Module):
         t = t.detach().to(torch.int64)
         x_recon = self.predict_start_from_noise(x, t=t, noise=epsilon)
 
+        # Project
+        projection_costs = None
+        if projector is not None and t[0] <= projector.diffusion_timestep_threshold * self.n_timesteps:
+            # if return_costs:
+            #     if self.goal_dim > 0:
+            #         x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints, return_costs=return_costs)
+            #         costs[i] = projection_costs
+            #     else:
+            #         x, projection_costs = projector.project(x, constraints, return_costs=return_costs)
+            #         costs[i] = projection_costs
+            # else:
+            if self.goal_dim > 0:
+                if return_costs:
+                    x_recon[:,:,:-self.goal_dim], projection_costs = projector.project(x_recon[:,:,:-self.goal_dim], constraints)
+                else:
+                    x_recon[:,:,:-self.goal_dim] = projector.project(x_recon[:,:,:-self.goal_dim], constraints)
+            else:
+                if return_costs:
+                    x_recon, projection_costs = projector.project(x_recon, constraints)
+                else:
+                    x_recon = projector.project(x_recon, constraints)
+
         if self.clip_denoised:
             x_recon.clamp_(-1., 1.)
         else:
@@ -440,20 +487,20 @@ class GaussianInvDynDiffusion(nn.Module):
 
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(
                 x_start=x_recon, x_t=x, t=t)
-        return model_mean, posterior_variance, posterior_log_variance
+        return model_mean, posterior_variance, posterior_log_variance, projection_costs
 
     @torch.no_grad()
-    def p_sample(self, x, cond, t, returns=None):
+    def p_sample(self, x, cond, t, returns=None, projector=None, constraints=None, return_costs=False):
         b, *_, device = *x.shape, x.device
-        model_mean, _, model_log_variance = self.p_mean_variance(x=x, cond=cond, t=t, returns=returns)
+        model_mean, _, model_log_variance, projection_costs = self.p_mean_variance(x=x, cond=cond, t=t, returns=returns, projector=projector, constraints=constraints, return_costs=return_costs)
         noise = 0.5*torch.randn_like(x)
         # no noise when t == 0
         nonzero_mask = (1 - (t == 0).float()).reshape(b, *((1,) * (len(x.shape) - 1)))
-        return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
+        return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise, projection_costs
 
     @torch.no_grad()
     def p_sample_loop(self, shape, cond, returns=None, verbose=True, return_diffusion=False, return_costs=True, 
-                      projector=None, constraints=None, repeat_last=0):
+                      projector=None, constraints=None, project_x_t=True, repeat_last=0):
         device = self.betas.device
 
         batch_size = shape[0]
@@ -468,7 +515,11 @@ class GaussianInvDynDiffusion(nn.Module):
         for i in reversed(range(last_timestep, self.n_timesteps)):
             t = i if i >= 0 else 0
             timesteps = torch.full((batch_size,), t, device=device, dtype=torch.long)
-            x = self.p_sample(x, cond, timesteps, returns)
+            if projector is None or project_x_t:
+                x, _ = self.p_sample(x, cond, timesteps, returns)
+            else:
+                x, projection_costs = self.p_sample(x, cond, timesteps, returns, projector=projector, constraints=constraints, return_costs=return_costs)
+                costs[i] = projection_costs
 
             x = apply_conditioning(x, cond, 0, goal_dim=self.goal_dim)
 
