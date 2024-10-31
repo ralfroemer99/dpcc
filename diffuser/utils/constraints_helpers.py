@@ -59,7 +59,7 @@ def plot_environment_constraints(exp, ax):
             ax.add_patch(matplotlib.patches.Rectangle((corner[0], corner[1]), 1, 1, color='k', alpha=0.2))
     elif exp == 'antmaze-umaze-v1':
         ax.add_patch(matplotlib.patches.Rectangle((-6, -2), 8, 4, color='k', alpha=0.2))
-    elif exp == 'd3il-avoiding':
+    elif exp == 'avoiding-d3il':
         centers = [[0.5, -0.1], [0.425, 0.08], [0.575, 0.08], [0.35, 0.26], [0.5, 0.26], [0.65, 0.26]]
         for center in centers:
             ax.add_patch(matplotlib.patches.Circle(center, 0.03, color='k', alpha=0.2))

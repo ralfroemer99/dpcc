@@ -65,7 +65,7 @@ base = {
         'ema_decay': 0.995,
         'train_test_split': 0.9,
         'device': 'cuda',
-        'seed': 0,
+        'seed': 0,            # Overwritten
     },
 
     'plan': {
@@ -92,7 +92,7 @@ base = {
         'dynamic_loss': False,
 
         ## loading
-        'diffusion_loadpath': 'f:diffusion/H{horizon}_T{n_diffusion_steps}_D{diffusion}/{seed}',
+        'diffusion_loadpath': 'f:diffusion/H{horizon}_T{n_diffusion_steps}_D{diffusion}',
         'value_loadpath': 'f:values/H{horizon}_T{n_diffusion_steps}',
 
         'diffusion_epoch': 'best',      # 'latest'

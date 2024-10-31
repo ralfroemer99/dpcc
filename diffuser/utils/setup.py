@@ -42,6 +42,7 @@ class Parser(argparse.ArgumentParser):
     def __init__(self, *args, savepath='', **kwargs):
         super().__init__(*args, **kwargs)
         self.add_argument('--config', help='Path to config file')
+        self.add_argument('--seed', type=int, help='Random seed')  # Add seed argument
         self.savepath = savepath
 
     def save(self, args):
@@ -51,13 +52,16 @@ class Parser(argparse.ArgumentParser):
         # print(f'[ utils/setup ] Saved args to {fullpath}')
         # super().save(fullpath, skip_unpicklable=True)
 
-    def parse_args(self, experiment=None):
+    def parse_args(self, experiment=None, seed=None):
         args = super().parse_args()
         args.dataset = self.dataset
         args.config = self.config
         ## if not loading from a config script, skip the result of the setup
         if not hasattr(args, 'config'): return args
         args = self.read_config(args, experiment)
+
+        args.seed = seed if seed is not None else args.seed
+
         # self.add_extras(args)
         self.eval_fstrings(args)
         self.set_seed(args)
