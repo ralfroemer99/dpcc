@@ -133,7 +133,7 @@ def sequence_dataset(env, preprocess_fn):
                         episode_data[data_key] = episode_data[data_key][:first_index+1]
 
             yield episode_data
-    elif env == 'avoiding-d3il':
+    elif env == 'avoiding-d3il' or env == 'd3il-avoiding':
         data_directory = 'environments/dataset/data/data/avoiding/data'
         data_dir = sim_framework_path(data_directory)
         state_files = os.listdir(data_dir)

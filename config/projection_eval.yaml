@@ -7,7 +7,12 @@ exps: [
   'avoiding-d3il',
   ]
 seeds: [0, 1, 2]
-n_trials: 50
+avoiding_halfspace_variants: [
+  'top-right',    # /
+  'top-left',    # \
+  'both-easier',    # / and \
+  ]   # 'top-right: /', 'top-left: \'
+n_trials: 5
 
 # Environments
 env_seeds: {
@@ -41,20 +46,17 @@ repeat_last: 2
 
 # Projection 
 projection_variants: [
-  'diffuser',
-  'post_processing',
-  'post_processing_project_x_t',
-  'no_prior',
-  'no_prior_project_x_t',
   'ours-random',
-  'ours-random-project_x_t',
-  # 'ours-random-repeat',
-  'ours-consistency',
-  'ours-consistency-project_x_t',
-  # 'ours-consistency-repeat',
+  # 'ours-enlarged-random',
   'ours-costs',
-  'ours-costs-project_x_t',
-  # 'ours-costs-repeat',
+  # 'ours-enlarged-costs',
+  'ours-consistency',
+  # 'ours-enlarged-consistency',
+  # 'diffuser',
+  # 'post_processing',
+  # 'post_processing-enlarged',
+  # 'no_prior',
+  # 'no_prior-enlarged',
 ]
 projection_cost: 'pos_vel'
 constraint_types: [
@@ -66,7 +68,7 @@ constraint_types: [
 enlarge_constraints: {
   'pointmaze': 0.05,
   'antmaze': 0.03,
-  'avoiding': 0.0,
+  'avoiding': 0.025,
 }
 halfspace_constraints: {
   'pointmaze-umaze-dense-v2': [
@@ -79,12 +81,12 @@ halfspace_constraints: {
     # [[6, 1.5], [1.5, 6], 'below'],
     ],
   'avoiding-d3il': [
-    # [[0.7, -0.3], [0.8, 0.5], 'above'],     # trivial
-    # [[0.6, -0.3], [0.7, 0.5], 'above'],     # easy
-    [[0.8, -0.3], [0.3, 0.5], 'below'],   # hard (\ shape)
-    # [[0.55, -0.3], [0.2, 0.5], 'below'],   # very hard (\ shape)
+    # [[0.8, -0.3], [0.3, 0.5], 'below'],   # hard (\ shape)
     # [[0.2, -0.3], [0.7, 0.5], 'below'],     # hard (/ shape)
-    # [[0.45, -0.3], [0.8, 0.5], 'below'],     # very hard (/ shape)
+    [[0.8, -0.5], [0.4, 0.5], 'below'],   # hard (\ shape)
+    [[0.2, -0.5], [0.6, 0.5], 'below'],     # hard (/ shape)
+    [[0.8, -0.3], [0.575, 0.5], 'below'],   # easier (\ shape)
+    [[0.2, -0.3], [0.425, 0.5], 'below'],   # easier (/ shape)
     ],
 }
 obstacle_constraints: {
@@ -102,7 +104,9 @@ obstacle_constraints: {
     ],
   'avoiding-d3il': [
     # {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.575, 0.08], 'radius': 0.1},  # second row, right obstacle larger
-    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.1], 'radius': 0.08},  # first row obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.4, 0.08], 'radius': 0.06},  # first row obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.6, 0.08], 'radius': 0.06},  # first row obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.1], 'radius': 0.06},  # first row obstacle larger
   ]
 }
 bounds: {   # need to be within the limits of the dataset due to the normalization
@@ -118,6 +122,8 @@ bounds: {   # need to be within the limits of the dataset due to the normalizati
   'avoiding-d3il': [
     {'type': 'lower', 'dimensions': ['vx', 'vy'], 'values': [-0.01, 0]},
     {'type': 'upper', 'dimensions': ['vx', 'vy'], 'values': [0.01, 0.01]},
+    {'type': 'lower', 'dimensions': ['vx', 'vy'], 'values': [-0.012, 0]},
+    {'type': 'upper', 'dimensions': ['vx', 'vy'], 'values': [0.012, 0.012]},
   ],
 }
 

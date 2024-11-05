@@ -4,6 +4,8 @@ import matplotlib
 def formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, act_obs_indices):
     m = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
     n = [-1, 1/m] / np.linalg.norm([-1, 1/m])
+    if (m > 0 and constraint[2] == 'below') or (m < 0 and constraint[2] == 'above'):
+        n *= -1
     points_enlarged = [constraint[0] + enlarge_constraints * n, constraint[1] + enlarge_constraints * n]
     d = points_enlarged[0][1] - m * points_enlarged[0][0]
     # d = constraint[0][1] - m * constraint[0][0]
@@ -46,6 +48,8 @@ def formulate_dynamics_constraints(exp, act_obs_indices, action_dim):
         dynamic_constraints = [
             ('deriv', np.array([act_obs_indices['x'], act_obs_indices['vx']])),
             ('deriv', np.array([act_obs_indices['y'], act_obs_indices['vy']])),
+            ('deriv', np.array([act_obs_indices['x_des'], act_obs_indices['vx']])),
+            ('deriv', np.array([act_obs_indices['y_des'], act_obs_indices['vy']])),
         ]
     return dynamic_constraints
 

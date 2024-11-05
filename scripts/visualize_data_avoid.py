@@ -53,8 +53,9 @@ fig, ax = plt.subplots(figsize=(10, 6))
 for i in range(observations.shape[0]):
     x_coords = observations[i, :path_lengths[i], 0]
     y_coords = observations[i, :path_lengths[i], 1]
-    ax.plot(x_coords, y_coords)
-centers = [[0.5, -0.1], [0.425, 0.08], [0.575, 0.08], [0.35, 0.26], [0.5, 0.26], [0.65, 0.26]]
+    ax.plot(y_coords, x_coords)
+# centers = [[0.5, -0.1], [0.425, 0.08], [0.575, 0.08], [0.35, 0.26], [0.5, 0.26], [0.65, 0.26]]
+centers = [[-0.1, 0.5], [0.08, 0.425], [0.08, 0.575], [0.26, 0.35], [0.26, 0.5], [0.26, 0.65]]
 for center in centers:
     ax.add_patch(matplotlib.patches.Circle(center, 0.025, color='k', alpha=0.2))
 
