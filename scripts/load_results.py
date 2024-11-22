@@ -1,5 +1,6 @@
 import yaml
 import numpy as np
+import matplotlib.pyplot as plt
 import diffuser.utils as utils
 
 # Load configuration
@@ -15,6 +16,11 @@ class Parser(utils.Parser):
 
 seeds = config['seeds']
 avoiding_halfspace_variants = config['avoiding_halfspace_variants']
+
+sr_goal_all = {}
+sr_constraints_all = {}
+timesteps_avg_all = {}
+timesteps_std_all = {}
 
 for variant in projection_variants:
     n_success_all = np.array([])
@@ -63,3 +69,74 @@ for variant in projection_variants:
     print(f'Average total violations: {total_violations_avg:.3f} +- {total_violations_std:.3f}')
     print(f'Average time: {avg_time.mean():.2f} +- {avg_time.std():.2f}')
     print(f'${steps_avg:.1f} \pm {steps_std:.1f}$ & ${success_rate_goal:.2f}$ & ${success_rate_constraints:.2f}$ & ${n_violations_avg:.1f} \pm {n_violations_std:.1f}$ & ${total_violations_avg:.2f} \pm {total_violations_std:.2f}$ \\\\')
+
+    sr_goal_all[variant] = success_rate_goal
+    sr_constraints_all[variant] = success_rate_constraints
+    timesteps_avg_all[variant] = steps_avg
+    timesteps_std_all[variant] = steps_std
+
+# Plot results
+# variants_to_plot = ['ours-random-project_x_t', 'ours-consistency-project_x_t', 'ours-costs-project_x_t']
+# variants_labels = ['DPCC-R', 'DPCC-T', 'DPCC-C']
+variants_to_plot = ['ours-enlarged-random-project_x_t', 'ours-enlarged-consistency-project_x_t', 'ours-enlarged-costs-project_x_t']
+variants_labels = ['DPCC-RT', 'DPCC-TT', 'DPCC-CT']
+
+# Extract success rates for each variant
+sr_goal = [sr_goal_all[variant] for variant in variants_to_plot]
+sr_constraints = [sr_constraints_all[variant] for variant in variants_to_plot]
+timesteps_avg = [timesteps_avg_all[variant] for variant in variants_to_plot]
+timesteps_std = [timesteps_std_all[variant] for variant in variants_to_plot]
+print(sr_goal)
+print(sr_constraints)
+print(timesteps_avg)
+print(timesteps_std)
+
+# Create a bar plot
+x = np.arange(len(variants_to_plot))  # the label locations
+width = 0.35  # the width of the bars
+
+fig, ax = plt.subplots(figsize=(10, 10))
+bars1 = ax.bar(x - width/2, sr_goal, width, label='Goal reached', color='green')
+bars2 = ax.bar(x + width/2, sr_constraints, width, label='Constraints satisfied', color='red')
+
+# Add some text for labels, title and custom x-axis tick labels, etc.
+ax.set_ylabel('Success Rate', fontsize=12)
+ax.set_xticks(x)
+ax.set_xticklabels(variants_labels, fontsize=12)
+plt.setp(ax.get_yticklabels(), fontsize=12)
+ax.legend(loc='lower left', fontsize=12) 
+
+# Add labels to the bars
+def add_labels(bars):
+    for bar in bars:
+        height = bar.get_height()
+        ax.annotate(f'{height:.2f}',
+                    xy=(bar.get_x() + bar.get_width() / 2, height),
+                    xytext=(0, 3),  # 3 points vertical offset
+                    textcoords="offset points",
+                    ha='center', va='bottom')
+add_labels(bars1)
+add_labels(bars2)
+
+fig.tight_layout()
+
+plt.savefig('success_rates.png')
+plt.show()
+
+# Create the second bar plot for timesteps
+fig, ax = plt.subplots(figsize=(10, 10))
+bars = ax.bar(x, timesteps_avg, width, yerr=timesteps_std, label='Timesteps', color=[0.5, 0.5, 1], capsize=5)
+
+# Add some text for labels, title and custom x-axis tick labels, etc.
+ax.set_xticks(x)
+ax.set_xticklabels(variants_labels, fontsize=12)
+plt.setp(ax.get_yticklabels(), fontsize=12)
+ax.set_ylim([0, 100])
+ax.legend(loc='lower left', fontsize=12) 
+
+# Add labels to the bars
+add_labels(bars)
+
+fig.tight_layout()
+plt.savefig('timesteps.png')
+plt.show()

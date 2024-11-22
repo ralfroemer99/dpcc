@@ -160,4 +160,5 @@ print(f'Average episode length: {np.mean(episode_lengths[successful_episodes == 
 print(f'Maximum episode length: {np.max(episode_lengths)}')
 print(f'Successful episodes: {successful_episodes.sum()}/{n_plot}')
 
+plt.savefig(f'{exp}_episodes.png')
 plt.show()

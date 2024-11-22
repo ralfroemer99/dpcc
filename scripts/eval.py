@@ -39,9 +39,18 @@ for exp in exps:
         elif halfspace_variant == 'top-right':
             polytopic_constraints = [config['halfspace_constraints'][exp][1]]
             obstacle_constraints = [config['obstacle_constraints'][exp][1]]
-        else:
+        elif halfspace_variant == 'both-easier':
             polytopic_constraints = [config['halfspace_constraints'][exp][2], config['halfspace_constraints'][exp][3]]
             obstacle_constraints = [config['obstacle_constraints'][exp][2]]
+        elif halfspace_variant == 'top-left-hard':
+            polytopic_constraints = [config['halfspace_constraints'][exp][0]]
+            obstacle_constraints = [config['obstacle_constraints'][exp][3]]
+        elif halfspace_variant == 'top-right-hard':
+            polytopic_constraints = [config['halfspace_constraints'][exp][1]]
+            obstacle_constraints = [config['obstacle_constraints'][exp][4]]
+        elif halfspace_variant == 'both-hard':
+            polytopic_constraints = [config['halfspace_constraints'][exp][2], config['halfspace_constraints'][exp][3]]
+            obstacle_constraints = [config['obstacle_constraints'][exp][5]]
 
         # polytopic_constraints = [config['halfspace_constraints'][exp][0]] if halfspace_variant == 'top-left' else [config['halfspace_constraints'][exp][1]]
         # obstacle_constraints = config['obstacle_constraints'][exp]
@@ -274,7 +283,8 @@ for exp in exps:
                     sampled_trajectories_all.append(sampled_trajectories)
                     if i >= plot_how_many:     # Plot only the first n trials
                         continue
-                    plot_states = ['x', 'y', 'vx', 'vy'] if 'maze' in exp else ['x', 'y']
+                    # plot_states = ['x', 'y', 'vx', 'vy'] if 'maze' in exp else ['x', 'y']
+                    plot_states = ['x', 'y', 'x_des', 'y_des']
 
                     for j in range(len(plot_states)):
                         ax[i, j].plot(np.array(obs_buffer)[:, obs_indices[plot_states[j]]])
@@ -307,7 +317,7 @@ for exp in exps:
 
                         if 'obstacles' in constraint_types:
                             for constraint in obstacle_constraints:
-                                curr_ax.add_patch(matplotlib.patches.Circle(constraint['center'], constraint['radius'], color='m', alpha=0.2))
+                                curr_ax.add_patch(matplotlib.patches.Circle(constraint['center'], constraint['radius'], color='b', alpha=0.2))
 
                 print(f'Success rate: {np.mean(n_success)}')
                 print(f'Constraints satisfied: {np.mean(collision_free_completed)}')

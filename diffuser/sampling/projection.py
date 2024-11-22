@@ -86,7 +86,7 @@ class Projector:
         self.append_linear_constraint(self.dynamic_constraints)
         self.add_numpy_constraints()     
 
-    def project(self, trajectory, constraints=None, return_costs=False):
+    def project(self, trajectory, constraints=None):
         """
             trajectory: np.ndarray of shape (batch_size, horizon, transition_dim) or (horizon, transition_dim)
             Solve an optimization problem of the form 
@@ -122,7 +122,6 @@ class Projector:
             A, b, C, d = self.A_np, self.b_np, self.C_np, self.d_np
 
         if self.skip_initial_state:
-            # s_0 = trajectory_reshaped[:self.transition_dim] if batch_size == 1 else trajectory_reshaped[0, :self.transition_dim]    # Current state
             s_0 = trajectory_reshaped[0, :self.transition_dim]
             if self.solver == 'proxsuite' or self.solver == 'gurobi':
                 s_0 = s_0.cpu().numpy()
@@ -134,15 +133,13 @@ class Projector:
                     counter += 1
 
         projection_costs = np.ones(batch_size, dtype=np.float32)
-        # start_time = time.time()
         if self.solver == 'qpth':           # Solve optimization problem with qpth solver
             sol = QPFunction()(Q, r, C, d, A, b)
             sol = sol.view(dims)
         elif self.solver == 'proxsuite':    # Solve optimization problem with proxsuite solver
             sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
             if self.parallelize == False:
-                qp = proxsuite.proxqp.dense.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0])
-                # qp = proxsuite.proxqp.sparse.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0]) --> Does not work?
+                qp = proxsuite.proxqp.dense.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0])      # Sparse QP not working
                 for i in range(batch_size):
                     qp.init(Q, r_np[i], A, b, C, None, d)
                     qp.solve()
@@ -228,16 +225,15 @@ class Projector:
             if A_double.size > 0:
                 constraints += ({'type': 'eq', 'fun': lambda x: A_double @ x - b_double, 'jac': lambda x: A_double},)   
             # initial_guess = np.random.normal(size=trajectory_np_double.shape)
-            initial_guess = np.ones_like(trajectory_np_double)
+            # initial_guess = np.ones_like(trajectory_np_double)
             for i in range(batch_size):
                 # Cost
-                cost_fun = lambda x: 0.5 * x @ Q_double @ x + r_np_double[i] @ x # + \
-                    # (A_double @ x - b_double) @ (A_double @ x - b_double)
+                cost_fun = lambda x: 0.5 * x @ Q_double @ x + r_np_double[i] @ x # + (A_double @ x - b_double) @ (A_double @ x - b_double)
                 jac_cost_fun = lambda x: Q_double @ x + r_np_double[i]
                 res = minimize(fun=cost_fun, 
-                            #    x0=trajectory_np_double[i],
+                               x0=trajectory_np_double[i],
                             #    x0=np.random.rand(trajectory_np_double[i]), 
-                               x0=initial_guess[i],
+                            #    x0=initial_guess[i],
                                constraints=constraints, 
                                method='SLSQP', 
                                jac=jac_cost_fun, 

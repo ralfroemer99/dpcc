@@ -149,6 +149,8 @@ class GaussianDiffusion(nn.Module):
 
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(
                 x_start=x_recon, x_t=x, t=t)
+
+        # TODO: Modify mean with gradient
         return model_mean, posterior_variance, posterior_log_variance, projection_costs
 
     @torch.no_grad()
@@ -192,7 +194,7 @@ class GaussianDiffusion(nn.Module):
                     x, projection_costs = projector.project(x, constraints)
                     costs[i] = projection_costs
 
-            # x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
+            x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
 
             if return_diffusion: diffusion.append(x)
 

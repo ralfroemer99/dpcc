@@ -12,11 +12,6 @@ exp = 'avoiding-d3il'
 halfspace_variants = config['avoiding_halfspace_variants']
 ax_limits = config['ax_limits'][exp]
 
-# Constraint projection
-repeat_last = config['repeat_last']
-diffusion_timestep_threshold = config['diffusion_timestep_threshold']
-constraint_types = config['constraint_types']
-
 fig, axes = plt.subplots(1, 3, figsize=(30, 10))
 
 for i, ax in enumerate(axes):

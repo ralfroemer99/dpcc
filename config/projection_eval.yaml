@@ -8,11 +8,14 @@ exps: [
   ]
 seeds: [0, 1, 2]
 avoiding_halfspace_variants: [
-  'top-right',    # /
-  'top-left',    # \
-  'both-easier',    # / and \
+  # 'top-right',    # /
+  # 'top-left',    # \
+  # 'both-easier',    # / and \
+  'top-right-hard',    # /
+  'top-left-hard',    # \
+  'both-hard',    # / and \
   ]   # 'top-right: /', 'top-left: \'
-n_trials: 5
+n_trials: 10
 
 # Environments
 env_seeds: {
@@ -46,17 +49,24 @@ repeat_last: 2
 
 # Projection 
 projection_variants: [
-  'ours-random',
-  # 'ours-enlarged-random',
-  'ours-costs',
-  # 'ours-enlarged-costs',
-  'ours-consistency',
-  # 'ours-enlarged-consistency',
-  # 'diffuser',
+  'diffuser',
   # 'post_processing',
   # 'post_processing-enlarged',
   # 'no_prior',
   # 'no_prior-enlarged',
+  # 'ours-random-project_x_t',
+  # 'ours-enlarged-random-project_x_t',
+  # 'ours-costs-project_x_t',
+  # 'ours-enlarged-costs-project_x_t',
+  'ours-enlarged-costs-project_x_t-wrongprior',
+  # 'ours-consistency-project_x_t',
+  # 'ours-enlarged-consistency-project_x_t',
+  # 'ours-random',
+  # 'ours-enlarged-random',
+  # 'ours-costs',
+  # 'ours-enlarged-costs',
+  # 'ours-consistency',
+  # 'ours-enlarged-consistency',
 ]
 projection_cost: 'pos_vel'
 constraint_types: [
@@ -104,9 +114,12 @@ obstacle_constraints: {
     ],
   'avoiding-d3il': [
     # {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.575, 0.08], 'radius': 0.1},  # second row, right obstacle larger
-    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.4, 0.08], 'radius': 0.06},  # first row obstacle larger
-    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.6, 0.08], 'radius': 0.06},  # first row obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.4, 0.08], 'radius': 0.06},  # second row, left obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.6, 0.08], 'radius': 0.06},  # second row, right obstacle larger
     {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.1], 'radius': 0.06},  # first row obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.4, 0.08], 'radius': 0.08},  # second row, left obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.6, 0.08], 'radius': 0.08},  # second row, right obstacle larger
+    {'type': 'sphere_outside', 'dimensions': ['x', 'y'], 'center': [0.5, -0.09], 'radius': 0.08},  # first row obstacle larger
   ]
 }
 bounds: {   # need to be within the limits of the dataset due to the normalization

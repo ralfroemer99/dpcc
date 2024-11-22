@@ -46,8 +46,8 @@ def formulate_dynamics_constraints(exp, act_obs_indices, action_dim):
         ]
     if 'avoiding' in exp and action_dim > 0:
         dynamic_constraints = [
-            ('deriv', np.array([act_obs_indices['x'], act_obs_indices['vx']])),
-            ('deriv', np.array([act_obs_indices['y'], act_obs_indices['vy']])),
+            # ('deriv', np.array([act_obs_indices['x'], act_obs_indices['vx']])),
+            # ('deriv', np.array([act_obs_indices['y'], act_obs_indices['vy']])),
             ('deriv', np.array([act_obs_indices['x_des'], act_obs_indices['vx']])),
             ('deriv', np.array([act_obs_indices['y_des'], act_obs_indices['vy']])),
         ]
@@ -69,6 +69,7 @@ def plot_environment_constraints(exp, ax, flip_xy=False):
             if flip_xy:
                 ax.add_patch(matplotlib.patches.Circle(center[::-1], 0.03, color='r'))
             ax.add_patch(matplotlib.patches.Circle(center, 0.03, color='r'))
+        ax.plot([0.2, 0.8], [0.35, 0.35], color=[0.4, 1, 0.4], linewidth=5)
 
 def plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits, flip_xy=False):
     for constraint in polytopic_constraints:
