@@ -14,7 +14,7 @@ exps = [
         'avoiding-d3il',
         ]
 
-seeds = [0]
+seeds = [3, 4]
 
 for exp in exps:
     class Parser(utils.Parser):

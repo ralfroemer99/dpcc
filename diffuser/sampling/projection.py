@@ -18,7 +18,7 @@ def solve_qp_proxsuite(i, Q_np, r_np, A, b, C, d, horizon, transition_dim):
 class Projector:
 
     def __init__(self, horizon, transition_dim, action_dim=0, goal_dim=0, constraint_list=[], normalizer=None, variant='states', 
-                 dt=0.1, cost_dims=None, skip_initial_state=True, diffusion_timestep_threshold=0.5,
+                 dt=0.1, cost_dims=None, skip_initial_state=True, diffusion_timestep_threshold=0.5, gradient=False, gradient_weights=None,
                  device='cuda', solver='proxsuite', parallelize=False):
         self.horizon = horizon
         self.transition_dim = transition_dim
@@ -26,6 +26,8 @@ class Projector:
         self.skip_initial_state = skip_initial_state
         # self.only_last = only_last
         self.diffusion_timestep_threshold = diffusion_timestep_threshold
+        self.gradient = gradient
+        self.gradient_weights = gradient_weights
         self.device = device
         self.solver = solver
         self.parallelize = parallelize
@@ -243,8 +245,6 @@ class Projector:
                                options={'maxiter': 1000, 'disp': False})
 
                 sol_np[i] = res.x
-                # if np.any((C_double @ res.x) - d_double > 1e-4):
-                #     print('Inequality constraints not satisfied!')
                 projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
 
                 # if np.linalg.norm(A_double @ res.x - b_double) > 1e-3:
@@ -255,10 +255,63 @@ class Projector:
             sol = torch.tensor(sol_np, device=self.device).reshape(dims)
 
         # print(f'Projection time {self.solver}:', time.time() - start_time)
-        # if return_costs:
         return sol, projection_costs    # only implemented for proxsuite and scipy and parallelize=False
-        # else:
-        #     return sol
+    
+    def compute_gradient(self, trajectory, constraints=None):
+        """
+            trajectory: np.ndarray of shape (batch_size, horizon, transition_dim) or (horizon, transition_dim)
+            Calculate the (weighted) gradients for the following cost functions:
+            c_1 = ||A * tau - b||^2                             --> grad_1 = 2 * A^T (A * tau - b)
+            c_2 = max(0, C * tau - d)^2                         --> grad_2 = 2 * C^T max(0, C * tau - d)
+            c_3 = sum_{t=1}^{H-1} (s_t^T P s_t + q^T s_t - v)^2 --> grad_3 = 2 * (2 * P s_t + q) * (s_t^T P s_t + q^T s_t - v)                 
+        """
+        
+        trajectory_reshaped = trajectory.reshape(trajectory.shape[0], -1)
+        trajectory_np = trajectory_reshaped.cpu().numpy()
+
+        # Constraints
+        A, b, C, d = self.A, self.b, self.C, self.d
+
+        if self.skip_initial_state:
+            s_0 = trajectory_reshaped[0, :self.transition_dim]
+            counter = 0
+            for constraint in self.dynamic_constraints.constraint_list:
+                if constraint[0] == 'deriv':
+                    x_idx = int(constraint[1][0])
+                    b[counter * self.horizon] = s_0[x_idx]
+                    counter += 1
+
+        # Equality and polytopic constraints
+        grad1 = torch.zeros_like(trajectory_reshaped)
+        grad2 = torch.zeros_like(trajectory_reshaped)
+        for i in range(trajectory.shape[0]):
+            grad1[i] = - A.T @ (A @ trajectory_reshaped[i] - b)
+            grad2[i] = - C.T @ torch.max(torch.zeros_like(C @ trajectory_reshaped[i] - d), C @ trajectory_reshaped[i] - d)
+        grad1 = grad1.reshape(trajectory.shape)
+        grad2 = grad2.reshape(trajectory.shape)
+
+        # Obstacle constraints
+        grad3 = np.zeros_like(trajectory_np)
+        for constraint_idx in range(len(self.obstacle_constraints.P_list)):
+            P = self.obstacle_constraints.P_list[constraint_idx]
+            q = self.obstacle_constraints.q_list[constraint_idx]
+            v = self.obstacle_constraints.v_list[constraint_idx]
+            for t in range(1, self.horizon):
+                start_idx = t * self.transition_dim
+                end_idx = (t + 1) * self.transition_dim
+                for i in range(trajectory.shape[0]):
+                    if trajectory_np[i, start_idx: end_idx] @ P @ trajectory_np[i, start_idx: end_idx] + q @ trajectory_np[i, start_idx: end_idx] <= v:
+                        continue
+                    else:
+                        grad3[i, start_idx: end_idx] -= 2 * P @ trajectory_np[i, start_idx: end_idx] + q   
+        grad3 = torch.tensor(grad3, device=self.device).reshape(trajectory.shape)
+        
+        if self.gradient_weights is not None:
+            grad1 = grad1 * self.gradient_weights[0]
+            grad2 = grad2 * self.gradient_weights[1]
+            grad3 = grad3 * self.gradient_weights[2]
+        
+        return grad1 + grad2 + grad3 
 
     def append_linear_constraint(self, constraint):
         self.C = torch.cat([self.C, constraint.C], dim=0)

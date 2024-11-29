@@ -68,7 +68,7 @@ for variant in projection_variants:
     print(f'Average violations: {n_violations_avg:.2f} +- {n_violations_std:.2f}')
     print(f'Average total violations: {total_violations_avg:.3f} +- {total_violations_std:.3f}')
     print(f'Average time: {avg_time.mean():.2f} +- {avg_time.std():.2f}')
-    print(f'${steps_avg:.1f} \pm {steps_std:.1f}$ & ${success_rate_goal:.2f}$ & ${success_rate_constraints:.2f}$ & ${n_violations_avg:.1f} \pm {n_violations_std:.1f}$ & ${total_violations_avg:.2f} \pm {total_violations_std:.2f}$ \\\\')
+    print(f'${steps_avg:.1f} \pm {steps_std:.1f}$ & ${success_rate_goal:.2f}$ & ${success_rate_constraints:.2f}$ & ${n_violations_avg:.1f} \pm {n_violations_std:.1f}$ \\\\')
 
     sr_goal_all[variant] = success_rate_goal
     sr_constraints_all[variant] = success_rate_constraints
@@ -76,10 +76,10 @@ for variant in projection_variants:
     timesteps_std_all[variant] = steps_std
 
 # Plot results
-# variants_to_plot = ['ours-random-project_x_t', 'ours-consistency-project_x_t', 'ours-costs-project_x_t']
-# variants_labels = ['DPCC-R', 'DPCC-T', 'DPCC-C']
-variants_to_plot = ['ours-enlarged-random-project_x_t', 'ours-enlarged-consistency-project_x_t', 'ours-enlarged-costs-project_x_t']
-variants_labels = ['DPCC-RT', 'DPCC-TT', 'DPCC-CT']
+variants_to_plot = ['ours-random-project_x_t', 'ours-consistency-project_x_t', 'ours-costs-project_x_t']
+variants_labels = ['DPCC-R', 'DPCC-T', 'DPCC-C']
+# variants_to_plot = ['ours-enlarged-random-project_x_t', 'ours-enlarged-consistency-project_x_t', 'ours-enlarged-costs-project_x_t']
+# variants_labels = ['DPCC-RT', 'DPCC-TT', 'DPCC-CT']
 
 # Extract success rates for each variant
 sr_goal = [sr_goal_all[variant] for variant in variants_to_plot]

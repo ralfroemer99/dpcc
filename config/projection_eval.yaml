@@ -1,12 +1,12 @@
 # General
-write_to_file: True
+write_to_file: False
 exps: [
   # 'pointmaze-umaze-dense-v2',
   # 'pointmaze-medium-dense-v2',
   # 'antmaze-umaze-v1',
   'avoiding-d3il',
   ]
-seeds: [0, 1, 2]
+seeds: [0, 1, 2, 3, 4]
 avoiding_halfspace_variants: [
   # 'top-right',    # /
   # 'top-left',    # \
@@ -15,7 +15,7 @@ avoiding_halfspace_variants: [
   'top-left-hard',    # \
   'both-hard',    # / and \
   ]   # 'top-right: /', 'top-left: \'
-n_trials: 10
+n_trials: 2
 
 # Environments
 env_seeds: {
@@ -49,18 +49,27 @@ repeat_last: 2
 
 # Projection 
 projection_variants: [
-  'diffuser',
+  # 'diffuser',
   # 'post_processing',
   # 'post_processing-enlarged',
   # 'no_prior',
   # 'no_prior-enlarged',
+  # 'gradient',
+  # 'gradient-enlarged',
   # 'ours-random-project_x_t',
   # 'ours-enlarged-random-project_x_t',
   # 'ours-costs-project_x_t',
   # 'ours-enlarged-costs-project_x_t',
-  'ours-enlarged-costs-project_x_t-wrongprior',
-  # 'ours-consistency-project_x_t',
-  # 'ours-enlarged-consistency-project_x_t',
+  # 'ours-enlarged-costs-project_x_t-dt0p25',
+  # 'ours-enlarged-costs-project_x_t-dt0p5',
+  # 'ours-enlarged-costs-project_x_t-dt2p0',
+  # 'ours-enlarged-costs-project_x_t-dt4p0',
+  'ours-consistency-project_x_t',
+  'ours-enlarged-consistency-project_x_t',
+  'ours-enlarged-consistency-project_x_t-dt0p25',
+  'ours-enlarged-consistency-project_x_t-dt0p5',
+  'ours-enlarged-consistency-project_x_t-dt2p0',
+  'ours-enlarged-consistency-project_x_t-dt4p0',
   # 'ours-random',
   # 'ours-enlarged-random',
   # 'ours-costs',
@@ -149,5 +158,5 @@ ax_limits: {
   'antmaze-umaze-v1': [[-6, 6], [-6, 6]],
   'antmaze-medium-diverse-v1': [[-12, 12],[-12, 12]],
   'antmaze-medium-diverse-v1': [[-20, 20], [-20, 20]], # Actually [-20, -14], [14, 20]
-  'avoiding-d3il': [[0.2, 0.8], [-0.3, 0.5]]
+  'avoiding-d3il': [[0.2, 0.8], [-0.3, 0.4]]
 }

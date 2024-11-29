@@ -61,7 +61,7 @@ actions = np.concatenate(actions)
 
 
 ## -------------- Plot all trajectories in the x-y plane -------------- ##
-fig, ax = plt.subplots(figsize=(8, 10))
+fig, ax = plt.subplots(figsize=(9, 10))
 for i in range(observations.shape[0]):
     x_coords = observations[i, :path_lengths[i], 0]
     y_coords = observations[i, :path_lengths[i], 1]
@@ -76,10 +76,10 @@ ax.set_xlim(ax_limits[0])
 ax.set_ylim(ax_limits[1])
 plt.show()
 plt.savefig('trajectories.png', bbox_inches='tight')
-
+plt.savefig('trajectories.pdf', bbox_inches='tight', format='pdf')
 
 # ------------ Check how many trajectories satisfy the constraints ------------ #
-fig, axes = plt.subplots(1, 3, figsize=(27, 10))
+fig, axes = plt.subplots(1, 3, figsize=(30, 10))
 for j, halfspace_variant in enumerate(halfspace_variants):
     if halfspace_variant == 'top-left':
         polytopic_constraints = [config['halfspace_constraints'][exp][0]]
@@ -150,7 +150,8 @@ for j, halfspace_variant in enumerate(halfspace_variants):
     ax.set_xlim(ax_limits[0])
     ax.set_ylim(ax_limits[1])
 plt.show()
-plt.savefig(f'trajectories_constraints.png', bbox_inches='tight')
+plt.savefig('trajectories_constraints.png', bbox_inches='tight')
+plt.savefig('trajectories_constraints.pdf', bbox_inches='tight', format='pdf')
 
 # utils.plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits)
 

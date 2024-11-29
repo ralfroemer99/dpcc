@@ -30,8 +30,6 @@ constraint_types = config['constraint_types']
 
 for exp in exps:
     for halfspace_variant in halfspace_variants:
-        results = {}
-
         robot_name = exp.split('-')[0]
         if halfspace_variant == 'top-left':
             polytopic_constraints = [config['halfspace_constraints'][exp][0]]
@@ -52,8 +50,6 @@ for exp in exps:
             polytopic_constraints = [config['halfspace_constraints'][exp][2], config['halfspace_constraints'][exp][3]]
             obstacle_constraints = [config['obstacle_constraints'][exp][5]]
 
-        # polytopic_constraints = [config['halfspace_constraints'][exp][0]] if halfspace_variant == 'top-left' else [config['halfspace_constraints'][exp][1]]
-        # obstacle_constraints = config['obstacle_constraints'][exp]
         bounds = config['bounds'][exp]
         ax_limits = config['ax_limits'][exp]
         enlarge_constraints = config['enlarge_constraints'][robot_name]
@@ -62,6 +58,10 @@ for exp in exps:
         class Parser(utils.Parser):
             dataset: str = exp
             config: str = 'config.' + exp
+
+        figs_all_seeds, axes_all_seeds = zip(*[plt.subplots(1, 1, figsize=(9, 10)) for _ in range(len(projection_variants))])
+        figs_all_seeds = list(figs_all_seeds)
+        axes_all_seeds = list(axes_all_seeds)
 
         for seed in seeds:
             args = Parser().parse_args(experiment='plan', seed=seed)
@@ -139,6 +139,7 @@ for exp in exps:
 
                 threshold = diffusion_timestep_threshold if not 'post_processing' in variant else 0
                 threshold = 0.25 if '0p25' in variant else threshold
+                gradient = True if 'gradient' in variant else False
 
                 if 'no_prior' in variant and 'enlarged' in variant:
                     constraints = constraint_list_without_prior_enlarged
@@ -149,10 +150,19 @@ for exp in exps:
                 else:
                     constraints = constraint_list
 
-                # constraints = constraint_list if not 'no_prior' in variant else constraint_list_without_prior
+                delta_t = dt
+                if 'dt0p25' in variant:
+                    delta_t = 0.25 * dt
+                elif 'dt0p5' in variant:
+                    delta_t = 0.5 * dt
+                elif 'dt2p0' in variant:
+                    delta_t = 2.0 * dt
+                elif 'dt4p0' in variant:
+                    delta_t = 4.0 * dt
+
                 # Create projector
                 projector = Projector(horizon=args.horizon, transition_dim=trajectory_dim, action_dim=action_dim, goal_dim=diffusion.goal_dim, constraint_list=constraints, normalizer=dataset.normalizer, 
-                                        diffusion_timestep_threshold=threshold, variant=diffuser_variant, dt=dt, cost_dims=None, device=args.device, solver='scipy')        # takes 0.02s
+                                        diffusion_timestep_threshold=threshold, gradient=gradient, gradient_weights=[1, 0.5, 2], variant=diffuser_variant, dt=delta_t, cost_dims=None, device=args.device, solver='scipy')        # takes 0.02s
                 projector = None if variant == 'diffuser' else projector
 
                 trajectory_selection = 'random'
@@ -172,7 +182,6 @@ for exp in exps:
                 fig, ax = plt.subplots(min(n_trials, plot_how_many), 6, figsize=(30, 5 * min(n_trials, plot_how_many)))
                 fig.suptitle(f'{exp} - {variant}')
 
-                action_update_every = 1
                 save_samples_every = args.horizon // 2
 
                 # Store a few sampled trajectories
@@ -294,9 +303,12 @@ for exp in exps:
                     for curr_ax in axes:
                         curr_ax.plot(np.array(obs_buffer)[:, obs_indices['x']], np.array(obs_buffer)[:, obs_indices['y']], 'k')
                         curr_ax.plot(np.array(obs_buffer)[0, obs_indices['x']], np.array(obs_buffer)[0, obs_indices['y']], 'go', label='Start')            # Start
-                        if 'maze' in exp: curr_ax.plot(np.array(obs_buffer)[0, obs_indices['goal_x']], np.array(obs_buffer)[0, obs_indices['goal_y']], 'ro', label='Goal')   # Goal
+                        # if 'maze' in exp: curr_ax.plot(np.array(obs_buffer)[0, obs_indices['goal_x']], np.array(obs_buffer)[0, obs_indices['goal_y']], 'ro', label='Goal')   # Goal
                         curr_ax.set_xlim(ax_limits[0])
                         curr_ax.set_ylim(ax_limits[1])
+
+                    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+                    axes_all_seeds[variant_idx].plot(np.array(obs_buffer)[:, obs_indices['x']], np.array(obs_buffer)[:, obs_indices['y']], colors[seed % len(colors)], linewidth=2)
                     
                     axes = [ax[i, 5], ax_all[i, variant_idx]]
                     for __ in range(len(sampled_trajectories_all[i])):          # Iterate over timesteps of sampled trajectories
@@ -304,7 +316,7 @@ for exp in exps:
                             for curr_ax in axes:
                                 curr_ax.plot(sampled_trajectories_all[i][__][___, :args.horizon, obs_indices['x']], sampled_trajectories_all[i][__][___, :args.horizon, obs_indices['y']], 'b')
                                 curr_ax.plot(sampled_trajectories_all[i][__][___, 0, obs_indices['x']], sampled_trajectories_all[i][__][___, 0, obs_indices['y']], 'go', label='Start')    # Current state
-                    if 'maze' in exp: ax[i, 5].plot(np.array(obs_buffer)[0, obs_indices['goal_x']], np.array(obs_buffer)[0, obs_indices['goal_y']], 'ro', label='Goal')   # Goal
+                    # if 'maze' in exp: ax[i, 5].plot(np.array(obs_buffer)[0, obs_indices['goal_x']], np.array(obs_buffer)[0, obs_indices['goal_y']], 'ro', label='Goal')   # Goal
                     ax[i, 5].set_xlim(ax_limits[0])
                     ax[i, 5].set_ylim(ax_limits[1])
 
@@ -341,11 +353,28 @@ for exp in exps:
                             collision_free_completed=collision_free_completed, 
                             args=args)
 
-                fig.savefig(f'{save_path}/{variant}.png')   
+                # fig.savefig(f'{save_path}/{variant}.png')   
                 plt.close(fig)
 
                 ax_all[0, variant_idx].set_title(variant)
                 env.close()
 
-            fig_all.savefig(f'{save_path}/all.png')
+            # fig_all.savefig(f'{save_path}/all.png')
             plt.show()
+        
+        variant_idx = 0
+        path = f'{os.path.dirname(args.savepath)}/all_seeds/{halfspace_variant}'
+        os.makedirs(path, exist_ok=True)
+        for fig, ax in zip(figs_all_seeds, axes_all_seeds):
+            ax.set_xlim(ax_limits[0])
+            ax.set_ylim(ax_limits[1])
+            ax.set_facecolor([1, 1, 0.9])
+            utils.plot_environment_constraints(exp, ax)
+            if 'halfspace' in constraint_types: utils.plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits)
+            if 'obstacles' in constraint_types:
+                for constraint in obstacle_constraints:
+                    ax.add_patch(matplotlib.patches.Circle(constraint['center'], constraint['radius'], color='b', alpha=0.2))
+            fig.savefig(f'{path}/{projection_variants[variant_idx]}.png', bbox_inches='tight')
+            fig.savefig(f'{path}/{projection_variants[variant_idx]}.pdf', bbox_inches='tight', format='pdf')
+            variant_idx += 1
+        

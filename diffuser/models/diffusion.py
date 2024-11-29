@@ -136,7 +136,7 @@ class GaussianDiffusion(nn.Module):
 
         # Project
         projection_costs = None
-        if projector is not None:
+        if projector is not None and projector.gradient is False:
             if self.goal_dim > 0:
                 x_recon[:,:,:-self.goal_dim], projection_costs = projector.project(x_recon[:,:,:-self.goal_dim], constraints)
             else:
@@ -150,7 +150,13 @@ class GaussianDiffusion(nn.Module):
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(
                 x_start=x_recon, x_t=x, t=t)
 
-        # TODO: Modify mean with gradient
+        if projector is not None and projector.gradient is True:
+            if self.goal_dim > 0:
+                grad = projector.compute_gradient(x_recon[:,:,:-self.goal_dim], constraints)
+            else:
+                grad = projector.compute_gradient(x_recon, constraints)
+            model_mean = model_mean + grad
+
         return model_mean, posterior_variance, posterior_log_variance, projection_costs
 
     @torch.no_grad()
@@ -186,7 +192,7 @@ class GaussianDiffusion(nn.Module):
 
             x = apply_conditioning(x, cond, self.action_dim, goal_dim=self.goal_dim)
 
-            if projector is not None and not project_x_recon and t <= projector.diffusion_timestep_threshold * self.n_timesteps:
+            if projector is not None and not projector.gradient and not project_x_recon and t <= projector.diffusion_timestep_threshold * self.n_timesteps:
                 if self.goal_dim > 0:
                     x[:,:,:-self.goal_dim], projection_costs = projector.project(x[:,:,:-self.goal_dim], constraints)
                     costs[i] = projection_costs
