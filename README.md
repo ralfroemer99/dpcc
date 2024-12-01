@@ -8,13 +8,13 @@ pip install -r requirements.txt
 ```
 You also need to install [D3IL](https://github.com/ALRhub/d3il) for the simulation environment.
 
-# Training
+## Training
 To train the trajectory diffusion model, run:
 ```bash
 python scripts/train.py
 ```
 
-# Testing
+## Testing
 To evaluate DPCC and reproduce the results reported in the paper, run:
 ```bash
 python scripts/eval.py
