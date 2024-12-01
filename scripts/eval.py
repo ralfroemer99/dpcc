@@ -31,16 +31,7 @@ constraint_types = config['constraint_types']
 for exp in exps:
     for halfspace_variant in halfspace_variants:
         robot_name = exp.split('-')[0]
-        if halfspace_variant == 'top-left':
-            polytopic_constraints = [config['halfspace_constraints'][exp][0]]
-            obstacle_constraints = [config['obstacle_constraints'][exp][0]]
-        elif halfspace_variant == 'top-right':
-            polytopic_constraints = [config['halfspace_constraints'][exp][1]]
-            obstacle_constraints = [config['obstacle_constraints'][exp][1]]
-        elif halfspace_variant == 'both-easier':
-            polytopic_constraints = [config['halfspace_constraints'][exp][2], config['halfspace_constraints'][exp][3]]
-            obstacle_constraints = [config['obstacle_constraints'][exp][2]]
-        elif halfspace_variant == 'top-left-hard':
+        if halfspace_variant == 'top-left-hard':
             polytopic_constraints = [config['halfspace_constraints'][exp][0]]
             obstacle_constraints = [config['obstacle_constraints'][exp][3]]
         elif halfspace_variant == 'top-right-hard':
@@ -99,36 +90,36 @@ for exp in exps:
 
             # -------------------- Load constraints ------------------
             constraint_list = []
-            constraint_list_enlarged = []
+            constraint_list_tightened = []
             # Halfspace constraints
-            constraint_list_polytopic_not_enlarged = []
+            constraint_list_polytopic_not_tightened = []
             if 'halfspace' in constraint_types:
                 for constraint in polytopic_constraints:
                     constraint_list.append(('ineq', utils.formulate_halfspace_constraints(constraint, 0, trajectory_dim, act_obs_indices)))
-                    constraint_list_enlarged.append(('ineq', utils.formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, act_obs_indices)))
-                    constraint_list_polytopic_not_enlarged.append(('ineq', utils.formulate_halfspace_constraints(constraint, 0, trajectory_dim, act_obs_indices)))
+                    constraint_list_tightened.append(('ineq', utils.formulate_halfspace_constraints(constraint, enlarge_constraints, trajectory_dim, act_obs_indices)))
+                    constraint_list_polytopic_not_tightened.append(('ineq', utils.formulate_halfspace_constraints(constraint, 0, trajectory_dim, act_obs_indices)))
 
             # Bounds
             if 'bounds' in constraint_types:
                 lower_bound, upper_bound = utils.formulate_bounds_constraints(constraint_types, bounds, trajectory_dim, act_obs_indices)
                 constraint_list.extend([['lb', lower_bound], ['ub', upper_bound]])
-                constraint_list_enlarged.extend([['lb', lower_bound], ['ub', upper_bound]])
+                constraint_list_tightened.extend([['lb', lower_bound], ['ub', upper_bound]])
 
             # Obstacle constraints
             if 'obstacles' in constraint_types:
                 for constr in obstacle_constraints:
                     constraint_list.append([constr['type'], [act_obs_indices[constr['dimensions'][0]], act_obs_indices[constr['dimensions'][1]]], constr['center'], constr['radius']])
-                    constraint_list_enlarged.append([constr['type'], [act_obs_indices[constr['dimensions'][0]], act_obs_indices[constr['dimensions'][1]]], constr['center'], constr['radius'] + enlarge_constraints])
+                    constraint_list_tightened.append([constr['type'], [act_obs_indices[constr['dimensions'][0]], act_obs_indices[constr['dimensions'][1]]], constr['center'], constr['radius'] + enlarge_constraints])
 
             # Dynamics constraints
             constraint_list_without_prior = copy(constraint_list)
-            constraint_list_without_prior_enlarged = copy(constraint_list_enlarged)
+            constraint_list_without_prior_tightened = copy(constraint_list_tightened)
             dynamics_constraints = []
             if 'dynamics' in constraint_types: dynamics_constraints = utils.formulate_dynamics_constraints(exp, act_obs_indices, action_dim)
 
             for constraint in dynamics_constraints:
                 constraint_list.append(constraint)
-                constraint_list_enlarged.append(constraint)
+                constraint_list_tightened.append(constraint)
 
             # -------------------- Run experiments ------------------
             env_seeds = config['env_seeds'][exp] if 'pointmaze-umaze' in exp else np.arange(100)       
@@ -141,12 +132,12 @@ for exp in exps:
                 threshold = 0.25 if '0p25' in variant else threshold
                 gradient = True if 'gradient' in variant else False
 
-                if 'no_prior' in variant and 'enlarged' in variant:
-                    constraints = constraint_list_without_prior_enlarged
-                elif 'no_prior' in variant and not 'enlarged' in variant:
+                if 'model_free' in variant and 'tightened' in variant:
+                    constraints = constraint_list_without_prior_tightened
+                elif 'model_free' in variant and not 'tightened' in variant:
                     constraints = constraint_list_without_prior
-                elif not 'no_prior' in variant and 'enlarged' in variant:
-                    constraints = constraint_list_enlarged
+                elif not 'model_free' in variant and 'tightened' in variant:
+                    constraints = constraint_list_tightened
                 else:
                     constraints = constraint_list
 
@@ -166,17 +157,12 @@ for exp in exps:
                 projector = None if variant == 'diffuser' else projector
 
                 trajectory_selection = 'random'
-                if 'consistency' in variant: trajectory_selection = 'temporal_consistency'
-                if 'costs' in variant: trajectory_selection = 'minimum_projection_cost'
-                repeat_last = 2 if 'repeat' in variant else 0
-                project_x_recon = True if not 'project_x_t' in variant else False
+                if 'dpcc-t' in variant: trajectory_selection = 'temporal_consistency'
+                if 'dpcc-c' in variant: trajectory_selection = 'minimum_projection_cost'
 
                 # Create policy
-                policy = Policy(
-                    model=diffusion, normalizer=dataset.normalizer, preprocess_fns=args.preprocess_fns, test_ret=args.test_ret, projector=projector, trajectory_selection=trajectory_selection,
-                    # **sample_kwargs
-                    repeat_last=repeat_last, project_x_recon=project_x_recon,
-                )    
+                policy = Policy(model=diffusion, normalizer=dataset.normalizer, preprocess_fns=args.preprocess_fns, 
+                                test_ret=args.test_ret, projector=projector, trajectory_selection=trajectory_selection)    
 
                 # Run policy
                 fig, ax = plt.subplots(min(n_trials, plot_how_many), 6, figsize=(30, 5 * min(n_trials, plot_how_many)))
@@ -222,7 +208,7 @@ for exp in exps:
                         # Check if a safety constraint is violated
                         violated_this_timestep = 0
                         if 'halfspace' in constraint_types:
-                            for constraint in constraint_list_polytopic_not_enlarged:
+                            for constraint in constraint_list_polytopic_not_tightened:
                                 if constraint[0] == 'ineq':
                                     c, d = constraint[1]
                                     obs_to_check = obs[:-diffusion.goal_dim] if diffusion.goal_dim > 0 else obs
@@ -353,13 +339,13 @@ for exp in exps:
                             collision_free_completed=collision_free_completed, 
                             args=args)
 
-                # fig.savefig(f'{save_path}/{variant}.png')   
+                fig.savefig(f'{save_path}/{variant}.png')   
                 plt.close(fig)
 
                 ax_all[0, variant_idx].set_title(variant)
                 env.close()
 
-            # fig_all.savefig(f'{save_path}/all.png')
+            fig_all.savefig(f'{save_path}/all.png')
             plt.show()
         
         variant_idx = 0

@@ -76,7 +76,7 @@ def get_dataset(env):
 
     return dataset
 
-def sequence_dataset(env):
+def sequence_dataset(env, preprocess_fn):
     """
     Returns an iterator through trajectories.
     Args:

@@ -8,13 +8,8 @@ from diffuser.utils import watch
 args_to_watch = [
     ('prefix', ''),
     ('horizon', 'H'),
-    ('n_diffusion_steps', 'T'),
-    # ('returns_condition', 'R'),
+    ('n_diffusion_steps', 'K'),
     ('diffusion', 'D'),
-    # ('predict_epsilon', 'E'),
-    # ('dynamic_loss', 'DL'),
-    ## value kwargs
-    # ('discount', 'd'),
 ]
 
 logbase = 'logs'
@@ -57,10 +52,10 @@ base = {
         'exp_name': watch(args_to_watch),
 
         ## training
-        'n_steps_per_epoch': 1000,  # TODO 
-        'n_train_steps': 1e5,       # TODO
-        'batch_size': 8,            # TODO
-        'learning_rate': 1e-4,      # TODO
+        'n_steps_per_epoch': 1000,
+        'n_train_steps': 1e5,
+        'batch_size': 8,
+        'learning_rate': 1e-4,
         'gradient_accumulate_every': 2,
         'ema_decay': 0.995,
         'train_test_split': 0.9,
@@ -92,32 +87,12 @@ base = {
         'dynamic_loss': False,
 
         ## loading
-        'diffusion_loadpath': 'f:diffusion/H{horizon}_T{n_diffusion_steps}_D{diffusion}',
-        'value_loadpath': 'f:values/H{horizon}_T{n_diffusion_steps}',
+        'diffusion_loadpath': 'f:diffusion/H{horizon}_K{n_diffusion_steps}_D{diffusion}',
+        'value_loadpath': 'f:values/H{horizon}_K{n_diffusion_steps}',
 
         'diffusion_epoch': 'best',      # 'latest'
 
         'verbose': False,
         'suffix': '0',
-    },
-}
-
-
-#------------------------ overrides ------------------------#
-
-halfcheetah_medium_replay_v2 = halfcheetah_medium_v2 = halfcheetah_medium_expert_v2 = {
-    'diffusion': {
-        'horizon': 4,
-        'dim_mults': (1, 4, 8),
-        'attention': True,
-    },
-    'values': {
-        'horizon': 4,
-        'dim_mults': (1, 4, 8),
-    },
-    'plan': {
-        'horizon': 4,
-        'scale': 0.001,
-        't_stopgrad': 4,
     },
 }

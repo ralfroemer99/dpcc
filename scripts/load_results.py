@@ -76,67 +76,66 @@ for variant in projection_variants:
     timesteps_std_all[variant] = steps_std
 
 # Plot results
-variants_to_plot = ['ours-random-project_x_t', 'ours-consistency-project_x_t', 'ours-costs-project_x_t']
+variants_to_plot = [['dpcc-r', 'dpcc-t', 'dpcc-c'], ['dpcc-r-tightened', 'dpcc-t-tightened', 'dpcc-c-tightened']]
 variants_labels = ['DPCC-R', 'DPCC-T', 'DPCC-C']
-# variants_to_plot = ['ours-enlarged-random-project_x_t', 'ours-enlarged-consistency-project_x_t', 'ours-enlarged-costs-project_x_t']
-# variants_labels = ['DPCC-RT', 'DPCC-TT', 'DPCC-CT']
 
-# Extract success rates for each variant
-sr_goal = [sr_goal_all[variant] for variant in variants_to_plot]
-sr_constraints = [sr_constraints_all[variant] for variant in variants_to_plot]
-timesteps_avg = [timesteps_avg_all[variant] for variant in variants_to_plot]
-timesteps_std = [timesteps_std_all[variant] for variant in variants_to_plot]
-print(sr_goal)
-print(sr_constraints)
-print(timesteps_avg)
-print(timesteps_std)
+for variants in variants_to_plot:
+    # Extract success rates for each variant
+    sr_goal = [sr_goal_all[variant] for variant in variants]
+    sr_constraints = [sr_constraints_all[variant] for variant in variants]
+    timesteps_avg = [timesteps_avg_all[variant] for variant in variants]
+    timesteps_std = [timesteps_std_all[variant] for variant in variants]
+    print(sr_goal)
+    print(sr_constraints)
+    print(timesteps_avg)
+    print(timesteps_std)
 
-# Create a bar plot
-x = np.arange(len(variants_to_plot))  # the label locations
-width = 0.35  # the width of the bars
+    # Create a bar plot
+    x = np.arange(len(variants))  # the label locations
+    width = 0.35  # the width of the bars
 
-fig, ax = plt.subplots(figsize=(10, 10))
-bars1 = ax.bar(x - width/2, sr_goal, width, label='Goal reached', color='green')
-bars2 = ax.bar(x + width/2, sr_constraints, width, label='Constraints satisfied', color='red')
+    fig, ax = plt.subplots(figsize=(10, 10))
+    bars1 = ax.bar(x - width/2, sr_goal, width, label='Goal reached', color='green')
+    bars2 = ax.bar(x + width/2, sr_constraints, width, label='Constraints satisfied', color='red')
 
-# Add some text for labels, title and custom x-axis tick labels, etc.
-ax.set_ylabel('Success Rate', fontsize=12)
-ax.set_xticks(x)
-ax.set_xticklabels(variants_labels, fontsize=12)
-plt.setp(ax.get_yticklabels(), fontsize=12)
-ax.legend(loc='lower left', fontsize=12) 
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    ax.set_ylabel('Success Rate', fontsize=12)
+    ax.set_xticks(x)
+    ax.set_xticklabels(variants_labels, fontsize=12)
+    plt.setp(ax.get_yticklabels(), fontsize=12)
+    ax.legend(loc='lower left', fontsize=12) 
 
-# Add labels to the bars
-def add_labels(bars):
-    for bar in bars:
-        height = bar.get_height()
-        ax.annotate(f'{height:.2f}',
-                    xy=(bar.get_x() + bar.get_width() / 2, height),
-                    xytext=(0, 3),  # 3 points vertical offset
-                    textcoords="offset points",
-                    ha='center', va='bottom')
-add_labels(bars1)
-add_labels(bars2)
+    # Add labels to the bars
+    def add_labels(bars):
+        for bar in bars:
+            height = bar.get_height()
+            ax.annotate(f'{height:.2f}',
+                        xy=(bar.get_x() + bar.get_width() / 2, height),
+                        xytext=(0, 3),  # 3 points vertical offset
+                        textcoords="offset points",
+                        ha='center', va='bottom')
+    add_labels(bars1)
+    add_labels(bars2)
 
-fig.tight_layout()
+    fig.tight_layout()
 
-plt.savefig('success_rates.png')
-plt.show()
+    plt.savefig('success_rates_tightened.png') if 'tightened' in variants[0] else plt.savefig('success_rates.png')
+    plt.show()
 
-# Create the second bar plot for timesteps
-fig, ax = plt.subplots(figsize=(10, 10))
-bars = ax.bar(x, timesteps_avg, width, yerr=timesteps_std, label='Timesteps', color=[0.5, 0.5, 1], capsize=5)
+    # Create the second bar plot for timesteps
+    fig, ax = plt.subplots(figsize=(10, 10))
+    bars = ax.bar(x, timesteps_avg, width, yerr=timesteps_std, label='Timesteps', color=[0.5, 0.5, 1], capsize=5)
 
-# Add some text for labels, title and custom x-axis tick labels, etc.
-ax.set_xticks(x)
-ax.set_xticklabels(variants_labels, fontsize=12)
-plt.setp(ax.get_yticklabels(), fontsize=12)
-ax.set_ylim([0, 100])
-ax.legend(loc='lower left', fontsize=12) 
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    ax.set_xticks(x)
+    ax.set_xticklabels(variants_labels, fontsize=12)
+    plt.setp(ax.get_yticklabels(), fontsize=12)
+    ax.set_ylim([0, 100])
+    ax.legend(loc='lower left', fontsize=12) 
 
-# Add labels to the bars
-add_labels(bars)
+    # Add labels to the bars
+    add_labels(bars)
 
-fig.tight_layout()
-plt.savefig('timesteps.png')
-plt.show()
+    fig.tight_layout()
+    plt.savefig('timesteps_tightened.png') if 'tightened' in variants[0] else plt.savefig('timesteps.png')
+    plt.show()
