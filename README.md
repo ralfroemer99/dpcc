@@ -1,4 +1,4 @@
-This repository contains the code to our paper "Diffusion Predictive Control with Constraints". We build upon [Diffuser](https://github.com/jannerm/diffuser)
+This repository contains the code to our paper "Diffusion Predictive Control with Constraints". We build upon the temporal U-Net implementation from [Diffuser](https://github.com/jannerm/diffuser).
 
 ## Installation
 Clone our repo and run:
