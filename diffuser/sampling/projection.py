@@ -1,19 +1,6 @@
-import time
-import multiprocessing
-from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
-import proxsuite
-import gurobipy as gp
-from qpth.qp import QPFunction
 from scipy.optimize import minimize, Bounds
-
-def solve_qp_proxsuite(i, Q_np, r_np, A, b, C, d, horizon, transition_dim):
-    qp = proxsuite.proxqp.dense.QP(horizon * transition_dim, A.shape[0], C.shape[0])
-    qp.init(Q_np, r_np[i], A, b, C, None, d)
-    qp.solve()
-    return qp.results.x
-
 
 class Projector:
 
@@ -43,14 +30,9 @@ class Projector:
                                                    action_normalizer=normalizer.normalizers['actions'], goal_dim=goal_dim)
         else:
             KeyError('Invalid variant. Choose either "states" or "states_actions".')            
-        
-        # ------------------- ONLY FOR TESTING PROJECTION ------------------
-        # else:
-        #     self.normalizer = normalizer
 
         # Quadratic cost
         if cost_dims is not None:
-            # costs = torch.ones(transition_dim, device=self.device) * 1e-3
             costs = torch.ones(transition_dim, device=self.device)
             for idx in cost_dims:
                 costs[idx] = 1
@@ -58,9 +40,6 @@ class Projector:
         else:
             self.Q = torch.eye(transition_dim * horizon, device=self.device)
 
-        # if self.normalizer is not None:
-        #     self.Q *= torch.diag(torch.tile(torch.tensor(self.normalizer.maxs[:transition_dim] - self.normalizer.mins[:transition_dim], device=self.device) ** 2, (self.horizon, )))
-        
         self.A = torch.empty((0, self.transition_dim * self.horizon), device=self.device)   # Equality constraints
         self.b = torch.empty(0, device=self.device)
         self.C = torch.empty((0, self.transition_dim * self.horizon), device=self.device)   # Inequality constraints
@@ -90,7 +69,7 @@ class Projector:
 
     def project(self, trajectory, constraints=None):
         """
-            trajectory: np.ndarray of shape (batch_size, horizon, transition_dim) or (horizon, transition_dim)
+            trajectory: np.ndarray of shape (batch_size, horizon, transition_dim)
             Solve an optimization problem of the form 
                 \hat z =   argmin_z 1/2 z^T Q z + r^T z
                         subject to  Az  = b
@@ -101,27 +80,21 @@ class Projector:
         
         dims = trajectory.shape
 
-        # Reshape the trajectory to a batch of vectors (from B x H x T to B x (HT) or a vector (from H x T to HT)
-        # if trajectory.ndim == 2:        # From H x T to HT
-        #     batch_size = 1
-        #     trajectory = trajectory.view(-1)
-        # else:      # From B x H x T to B x (HT)
+        # Reshape the trajectory to a batch of vectors (from B x H x T to B x (HT)
         batch_size = trajectory.shape[0]
         trajectory_reshaped = trajectory.reshape(trajectory.shape[0], -1)
 
         # Cost
         r = - trajectory_reshaped @ self.Q
         r_np = r.cpu().numpy()
-        # if self.solver == 'proxsuite' or self.solver == 'gurobi':
-        #     r = r.cpu().numpy()
-        Q = self.Q if self.solver == 'qpth' else self.Q_np
+        Q = self.Q_np.astype('double')
         trajectory_np = trajectory_reshaped.cpu().numpy()
 
         # Constraints
-        if self.solver == 'qpth':
-            A, b, C, d = self.A, self.b, self.C, self.d
-        else:
-            A, b, C, d = self.A_np, self.b_np, self.C_np, self.d_np
+        A = self.A_np.astype('double')
+        b = self.b_np.astype('double')
+        C = self.C_np.astype('double')
+        d = self.d_np.astype('double')
 
         if self.skip_initial_state:
             s_0 = trajectory_reshaped[0, :self.transition_dim]
@@ -134,125 +107,49 @@ class Projector:
                     b[counter * self.horizon] = s_0[x_idx]
                     counter += 1
 
+        r_np_double = r_np.astype('double')
+        trajectory_np_double = trajectory_np.astype('double')
+        # Constraints
+        constraints = ()
+        for constraint_idx in range(len(self.obstacle_constraints.P_list)):
+            P = self.obstacle_constraints.P_list[constraint_idx]
+            q = self.obstacle_constraints.q_list[constraint_idx]
+            v = self.obstacle_constraints.v_list[constraint_idx]
+            for t in range(1, self.horizon):                        # Obstacle constraints
+                start_idx = t * self.transition_dim
+                end_idx = (t + 1) * self.transition_dim
+                constraints += ({'type': 'ineq', 'fun': lambda x, start_idx=start_idx, end_idx=end_idx, P=P, q=q, v=v: -x[start_idx: end_idx] @ P @ x[start_idx: end_idx] - q @ x[start_idx: end_idx] + v,
+                                    'jac': lambda x, start_idx=start_idx, end_idx=end_idx, P=P, q=q: np.concatenate([np.zeros(start_idx), -2 * P @ x[start_idx: end_idx] - q, np.zeros(len(x) - end_idx)])},)
+
+        if C.size > 0:
+            constraints += ({'type': 'ineq', 'fun': lambda x: -C @ x + d, 'jac': lambda x: -C},)
+        if A.size > 0:
+            constraints += ({'type': 'eq', 'fun': lambda x: A @ x - b, 'jac': lambda x: A},)   
+        
         projection_costs = np.ones(batch_size, dtype=np.float32)
-        if self.solver == 'qpth':           # Solve optimization problem with qpth solver
-            sol = QPFunction()(Q, r, C, d, A, b)
-            sol = sol.view(dims)
-        elif self.solver == 'proxsuite':    # Solve optimization problem with proxsuite solver
-            sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
-            if self.parallelize == False:
-                qp = proxsuite.proxqp.dense.QP(self.horizon * self.transition_dim, self.A_np.shape[0], self.C_np.shape[0])      # Sparse QP not working
-                for i in range(batch_size):
-                    qp.init(Q, r_np[i], A, b, C, None, d)
-                    qp.solve()
-                    sol_np[i] = qp.results.x
-                    projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
-            else:
-                with ThreadPoolExecutor() as executor:
-                    results = list(executor.map(solve_qp_proxsuite, range(batch_size), [Q]*batch_size, [r_np]*batch_size, [A]*batch_size, [b]*batch_size, 
-                                                [C]*batch_size, [d]*batch_size, [self.horizon]*batch_size, [self.transition_dim]*batch_size))
+        sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
+        for i in range(batch_size):
+            # Cost
+            cost_fun = lambda x: 0.5 * x @ Q @ x + r_np_double[i] @ x # + (A_double @ x - b_double) @ (A_double @ x - b_double)
+            jac_cost_fun = lambda x: Q @ x + r_np_double[i]
+            res = minimize(fun=cost_fun, 
+                            x0=trajectory_np_double[i],
+                            constraints=constraints, 
+                            method='SLSQP', 
+                            jac=jac_cost_fun, 
+                            bounds=Bounds(-5 * np.ones_like(trajectory_np_double[i]), 5 * np.ones_like(trajectory_np_double[i])),
+                            tol=1e-6,
+                            options={'maxiter': 1000, 'disp': False})
 
-                for i, result in enumerate(results):
-                    sol_np[i] = result
-                    projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
-            sol = torch.tensor(sol_np, device=self.device).reshape(dims)
-        elif self.solver == 'gurobi':   # Solve optimization problem with gurobi solver
-            sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)     
+            sol_np[i] = res.x
+            projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
 
-            # Create model --> Put these things in the init method
-            model = gp.Model('nonconvex_qp')
-            model.setParam('MipFocus', 1)
-            model.setParam('SolutionLimit', 1e5)
-            model.Params.LogToConsole = 1
+            # if np.linalg.norm(A_double @ res.x - b_double) > 1e-3:
+            #     print('Equality constraints not satisfied!')
+            # if np.any(C_double @ res.x > d_double + 1e-3):
+            #     print('Inequality constraints not satisfied!')
 
-            # Add variables
-            tau = model.addMVar(shape=(self.horizon * self.transition_dim), lb=-gp.GRB.INFINITY, ub=gp.GRB.INFINITY, name='tau')
-            
-            # Add constraints
-            # model.addConstr(A @ tau == b, name='eq_constraints')      # Dynamics constraints
-            for constraint_idx in range(len(self.obstacle_constraints.P_list)):
-                P = self.obstacle_constraints.P_list[constraint_idx]
-                q = self.obstacle_constraints.q_list[constraint_idx]
-                v = self.obstacle_constraints.v_list[constraint_idx]
-                for t in range(1, self.horizon):                        # Obstacle constraints
-                    start_idx = t * self.transition_dim
-                    end_idx = (t + 1) * self.transition_dim
-                    model.addConstr(tau[start_idx: end_idx] @ P @ tau[start_idx: end_idx] + q @ tau[start_idx: end_idx] <= v,
-                                    name=f'obstacle_{t}')     
-            
-            for i in range(batch_size):
-                # Cost function
-                cost = 0.5 * tau @ Q @ tau + r_np[i] @ tau
-                cost += (A @ tau - b) @ (A @ tau - b)
-                model.setObjective(cost, gp.GRB.MINIMIZE)
-                model.update()
-                # Warm start
-                for idx, v in enumerate(model.getVars()):
-                    v.Start = trajectory_np[i][idx]
-                model.update()
-
-                # start_time = time.time()
-                model.optimize()
-                # print(f'Projection time for sample {i}:', time.time() - start_time)
-                if model.Status == 2:
-                    sol_np[i] = np.array(model.getAttr("X"))
-                else:
-                    sol_np[i] = trajectory_np[i]
-            
-            sol = torch.tensor(sol_np, device=self.device).reshape(dims)
-        elif self.solver == 'scipy':    # Solve optimization problem with scipy solver
-            sol_np = np.zeros((batch_size, self.horizon * self.transition_dim), dtype=np.float32)
-
-            Q_double = Q.astype('double')
-            A_double = A.astype('double')
-            b_double = b.astype('double')
-            C_double = C.astype('double')
-            d_double = d.astype('double')
-            r_np_double = r_np.astype('double')
-            trajectory_np_double = trajectory_np.astype('double')
-            # Constraints
-            constraints = ()
-            for constraint_idx in range(len(self.obstacle_constraints.P_list)):
-                P = self.obstacle_constraints.P_list[constraint_idx]
-                q = self.obstacle_constraints.q_list[constraint_idx]
-                v = self.obstacle_constraints.v_list[constraint_idx]
-                for t in range(1, self.horizon):                        # Obstacle constraints
-                    start_idx = t * self.transition_dim
-                    end_idx = (t + 1) * self.transition_dim
-                    constraints += ({'type': 'ineq', 'fun': lambda x, start_idx=start_idx, end_idx=end_idx, P=P, q=q, v=v: -x[start_idx: end_idx] @ P @ x[start_idx: end_idx] - q @ x[start_idx: end_idx] + v,
-                                     'jac': lambda x, start_idx=start_idx, end_idx=end_idx, P=P, q=q: np.concatenate([np.zeros(start_idx), -2 * P @ x[start_idx: end_idx] - q, np.zeros(len(x) - end_idx)])},)
-
-            if C_double.size > 0:
-                constraints += ({'type': 'ineq', 'fun': lambda x: -C_double @ x + d_double, 'jac': lambda x: -C_double},)
-            if A_double.size > 0:
-                constraints += ({'type': 'eq', 'fun': lambda x: A_double @ x - b_double, 'jac': lambda x: A_double},)   
-            # initial_guess = np.random.normal(size=trajectory_np_double.shape)
-            # initial_guess = np.ones_like(trajectory_np_double)
-            for i in range(batch_size):
-                # Cost
-                cost_fun = lambda x: 0.5 * x @ Q_double @ x + r_np_double[i] @ x # + (A_double @ x - b_double) @ (A_double @ x - b_double)
-                jac_cost_fun = lambda x: Q_double @ x + r_np_double[i]
-                res = minimize(fun=cost_fun, 
-                               x0=trajectory_np_double[i],
-                            #    x0=np.random.rand(trajectory_np_double[i]), 
-                            #    x0=initial_guess[i],
-                               constraints=constraints, 
-                               method='SLSQP', 
-                               jac=jac_cost_fun, 
-                               bounds=Bounds(-5 * np.ones_like(trajectory_np_double[i]), 5 * np.ones_like(trajectory_np_double[i])),
-                            #    bounds=Bounds(self.lb_np, self.ub_np),
-                               tol=1e-6,
-                               options={'maxiter': 1000, 'disp': False})
-
-                sol_np[i] = res.x
-                projection_costs[i] = 0.5 * sol_np[i] @ Q @ sol_np[i] + r_np[i] @ sol_np[i] + 0.5 * trajectory_np[i] @ Q @ trajectory_np[i]
-
-                # if np.linalg.norm(A_double @ res.x - b_double) > 1e-3:
-                #     print('Equality constraints not satisfied!')
-                # if np.any(C_double @ res.x > d_double + 1e-3):
-                #     print('Inequality constraints not satisfied!')
-
-            sol = torch.tensor(sol_np, device=self.device).reshape(dims)
+        sol = torch.tensor(sol_np, device=self.device).reshape(dims)
 
         # print(f'Projection time {self.solver}:', time.time() - start_time)
         return sol, projection_costs    # only implemented for proxsuite and scipy and parallelize=False

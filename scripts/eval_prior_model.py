@@ -31,14 +31,14 @@ dataset = diffusion_experiment.dataset
 policy = Policy(model=diffusion, normalizer=dataset.normalizer, preprocess_fns=args.preprocess_fns, test_ret=args.test_ret) 
 
 # -------------------- Run experiments ------------------
-env = ObstacleAvoidanceEnv()
+env = ObstacleAvoidanceEnv(render=False)
 env.start()
 
 ax_limits = config['ax_limits'][exp]
 
 errors = np.zeros((10, 100))
 
-for i in range(10):
+for i in range(2):
     torch.manual_seed(i)
     # Reset environment
     obs = env.reset()

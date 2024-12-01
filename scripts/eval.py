@@ -24,7 +24,6 @@ n_trials = config['n_trials']
 plot_how_many = config['plot_how_many']
 
 # Constraint projection
-repeat_last = config['repeat_last']
 diffusion_timestep_threshold = config['diffusion_timestep_threshold']
 constraint_types = config['constraint_types']
 
