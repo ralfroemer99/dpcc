@@ -4,8 +4,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import diffuser.utils as utils
-from agents.utils.sim_path import sim_framework_path
-from d3il.environments.d3il.envs.gym_avoiding_env.gym_avoiding.envs.avoiding import ObstacleAvoidanceEnv
+from d3il.agents.utils.sim_path import sim_framework_path
 
 # Load configuration
 with open('config/projection_eval.yaml', 'r') as file:
@@ -74,9 +73,8 @@ ax.plot([ax_limits[0][0], ax_limits[0][1]], [0.35, 0.35], color=[0.4, 1, 0.4], l
 ax.set_facecolor([1, 1, 0.9])
 ax.set_xlim(ax_limits[0])
 ax.set_ylim(ax_limits[1])
-plt.show()
-plt.savefig('trajectories.png', bbox_inches='tight')
-plt.savefig('trajectories.pdf', bbox_inches='tight', format='pdf')
+fig.savefig('figures/avoiding_data.png', bbox_inches='tight')
+# plt.savefig('avoiding_data.pdf', bbox_inches='tight', format='pdf')
 
 # ------------ Check how many trajectories satisfy the constraints ------------ #
 fig, axes = plt.subplots(1, 3, figsize=(30, 10))
@@ -149,9 +147,8 @@ for j, halfspace_variant in enumerate(halfspace_variants):
     ax.set_facecolor([1, 1, 0.9])
     ax.set_xlim(ax_limits[0])
     ax.set_ylim(ax_limits[1])
-plt.show()
-plt.savefig('trajectories_constraints.png', bbox_inches='tight')
-plt.savefig('trajectories_constraints.pdf', bbox_inches='tight', format='pdf')
+fig.savefig('figures/avoiding_constraints.png', bbox_inches='tight')
+# fig.savefig('avoiding_constraints.pdf', bbox_inches='tight', format='pdf')
 
 # utils.plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits)
 
@@ -168,14 +165,13 @@ ax[0].set_title('X Velocities')
 ax[1].set_xlabel('Time')
 ax[1].set_ylabel('Y Velocity')
 ax[1].set_title('Y Velocities')
-plt.show()
-plt.savefig('velocities.png', bbox_inches='tight')
+fig.savefig('figures/avoiding_velocities.png', bbox_inches='tight')
 
 # Plot episode lengths
-plt.figure(figsize=(10, 6))
-plt.plot(path_lengths, marker='o', linestyle='None')
-plt.xlabel('Episode Length')
-plt.ylabel('Frequency')
-plt.title('Distribution of Episode Lengths')
+fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+ax.plot(path_lengths, marker='o', linestyle='None')
+ax.set_xlabel('Episode')
+ax.set_ylabel('Episode Length')
+ax.set_title('Distribution of Episode Lengths')
+fig.savefig('figures/avoiding_episode_lengths.png', bbox_inches='tight')
 plt.show()
-plt.savefig('episode_lengths.png', bbox_inches='tight')

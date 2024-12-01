@@ -1,6 +1,5 @@
 import torch
 import diffuser.utils as utils
-from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
 exps = [
         # 'pointmaze-open-dense-v2',

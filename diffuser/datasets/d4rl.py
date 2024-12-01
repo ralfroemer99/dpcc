@@ -11,7 +11,7 @@ from contextlib import (
     redirect_stdout,
 )
 
-from agents.utils.sim_path import sim_framework_path
+from d3il.agents.utils.sim_path import sim_framework_path
 
 MINARI_DATASETS = ['pointmaze-open-dense-v2', 'pointmaze-umaze-dense-v2', 'pointmaze-medium-dense-v2', 'pointmaze-large-dense-v2', 'antmaze-umaze-v1', 'antmaze-medium-diverse-v1', 'antmaze-large-diverse-v1']
 
@@ -76,7 +76,7 @@ def get_dataset(env):
 
     return dataset
 
-def sequence_dataset(env, preprocess_fn):
+def sequence_dataset(env):
     """
     Returns an iterator through trajectories.
     Args:
