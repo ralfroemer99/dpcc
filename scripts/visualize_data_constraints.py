@@ -16,8 +16,6 @@ halfspace_variants = config['avoiding_halfspace_variants']
 ax_limits = config['ax_limits'][exp]
 
 # Constraint projection
-repeat_last = config['repeat_last']
-diffusion_timestep_threshold = config['diffusion_timestep_threshold']
 constraint_types = config['constraint_types']
 
 obs_indices = {'x_des': 0, 'y_des': 1, 'x': 2, 'y': 3}
@@ -79,16 +77,7 @@ fig.savefig('figures/avoiding_data.png', bbox_inches='tight')
 # ------------ Check how many trajectories satisfy the constraints ------------ #
 fig, axes = plt.subplots(1, 3, figsize=(30, 10))
 for j, halfspace_variant in enumerate(halfspace_variants):
-    if halfspace_variant == 'top-left':
-        polytopic_constraints = [config['halfspace_constraints'][exp][0]]
-        obstacle_constraints = [config['obstacle_constraints'][exp][0]]
-    elif halfspace_variant == 'top-right':
-        polytopic_constraints = [config['halfspace_constraints'][exp][1]]
-        obstacle_constraints = [config['obstacle_constraints'][exp][1]]
-    elif halfspace_variant == 'both-easier':
-        polytopic_constraints = [config['halfspace_constraints'][exp][2], config['halfspace_constraints'][exp][3]]
-        obstacle_constraints = [config['obstacle_constraints'][exp][2]]
-    elif halfspace_variant == 'top-left-hard':
+    if halfspace_variant == 'top-left-hard':
         polytopic_constraints = [config['halfspace_constraints'][exp][0]]
         obstacle_constraints = [config['obstacle_constraints'][exp][3]]
     elif halfspace_variant == 'top-right-hard':
@@ -118,7 +107,7 @@ for j, halfspace_variant in enumerate(halfspace_variants):
             # Check obstacle constraints
             for constraint in obstacle_constraints:
                 center = constraint['center']
-                radius = constraint['radius']
+                radius = constraint['radius'] + 0.025
                 dimensions = [obs_indices[dim] for dim in constraint['dimensions']]
                 if constraint['type'] == 'sphere_outside' and np.linalg.norm(observation[dimensions] - center) < radius:
                     feasible = False
@@ -149,8 +138,6 @@ for j, halfspace_variant in enumerate(halfspace_variants):
     ax.set_ylim(ax_limits[1])
 fig.savefig('figures/avoiding_constraints.png', bbox_inches='tight')
 # fig.savefig('avoiding_constraints.pdf', bbox_inches='tight', format='pdf')
-
-# utils.plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits)
 
 # Plot velocities
 fig, ax = plt.subplots(1, 2, figsize=(10, 6))

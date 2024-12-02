@@ -3,7 +3,7 @@ import diffuser.utils as utils
 
 exp = 'avoiding-d3il'
 
-seeds = [0, 1]
+seeds = [0, 1, 2, 3, 4]
 
 class Parser(utils.Parser):
     dataset: str = exp

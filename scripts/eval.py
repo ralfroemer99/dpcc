@@ -24,7 +24,6 @@ n_trials = config['n_trials']
 plot_how_many = config['plot_how_many']
 
 # Constraint projection
-diffusion_timestep_threshold = config['diffusion_timestep_threshold']
 constraint_types = config['constraint_types']
 
 for exp in exps:
@@ -127,8 +126,6 @@ for exp in exps:
             for variant_idx, variant in enumerate(projection_variants):
                 print(f'------------------------Running {exp} - {halfspace_variant} - {variant} ({seed})----------------------------')
 
-                threshold = diffusion_timestep_threshold if not 'post_processing' in variant else 0
-                threshold = 0.25 if '0p25' in variant else threshold
                 gradient = True if 'gradient' in variant else False
 
                 if 'model_free' in variant and 'tightened' in variant:
@@ -152,7 +149,7 @@ for exp in exps:
 
                 # Create projector
                 projector = Projector(horizon=args.horizon, transition_dim=trajectory_dim, action_dim=action_dim, goal_dim=diffusion.goal_dim, constraint_list=constraints, normalizer=dataset.normalizer, 
-                                        diffusion_timestep_threshold=threshold, gradient=gradient, gradient_weights=[1, 0.5, 2], variant=diffuser_variant, dt=delta_t, cost_dims=None, device=args.device, solver='scipy')        # takes 0.02s
+                                        gradient=gradient, gradient_weights=[1, 0.5, 2], variant=diffuser_variant, dt=delta_t, cost_dims=None, device=args.device, solver='scipy')
                 projector = None if variant == 'diffuser' else projector
 
                 trajectory_selection = 'random'
@@ -224,12 +221,8 @@ for exp in exps:
                                     collision_free_completed[i] = 0
                         
                         if _ > 0 and 'bounds' in constraint_types:
-                            # if np.any(obs[:-diffusion.goal_dim] < lb - 1e-3) or np.any(obs[:-diffusion.goal_dim] > ub + 1e-3):
                             act_obs = np.concatenate((action, obs)) if action_dim > 0 else obs
                             total_violations[i] += np.sum(np.maximum(0, act_obs - upper_bound)) + np.sum(np.maximum(0, lower_bound - act_obs))
-                            # if np.sum(np.maximum(0, act_obs - upper_bound)) + np.sum(np.maximum(0, lower_bound - act_obs)) > 0:
-                            #     print('Bounds violated')
-                            # violated_this_timestep = 1
 
                         n_violations[i] += violated_this_timestep
                         

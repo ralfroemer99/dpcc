@@ -13,6 +13,10 @@ To train the trajectory diffusion model, run:
 ```bash
 python scripts/train.py
 ```
+You can also visualize the training data without constraints and the novel test-time constraints:
+```bash
+python visualize_data_constraints/train.py
+```
 
 ## Testing
 To evaluate DPCC and reproduce the results reported in the paper, run:
