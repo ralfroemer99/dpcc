@@ -1,4 +1,6 @@
-This repository contains the code to our paper "Diffusion Predictive Control with Constraints". We build upon the temporal U-Net implementation from [Diffuser](https://github.com/jannerm/diffuser).
+This repository contains the code to our paper "Diffusion Predictive Control with Constraints". We build upon the temporal U-Net implementation from [Diffuser](https://github.com/jannerm/diffuser) and use the Avoiding environment from [D3IL](https://github.com/ALRhub/d3il).
+
+![alt text](https://github.com/ralfroemer99/dpcc/blob/main/figures/avoiding.png?raw=true)
 
 ## Installation
 Clone our repo and run:
