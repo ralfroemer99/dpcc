@@ -5,8 +5,8 @@ exps: [
   ]
 seeds: [0, 1, 2, 3, 4]
 avoiding_halfspace_variants: [
-  'top-left-hard',    # \
   'top-right-hard',    # /
+  'top-left-hard',    # \
   'both-hard',    # / and \
   ]   # 'top-right: /', 'top-left: \'
 n_trials: 2
@@ -27,23 +27,26 @@ diffusion_timestep_threshold: 0.5
 
 # Projection 
 projection_variants: [
-  # 'diffuser',
-  # 'post_processing',
-  # 'post_processing-tightened',
-  # 'model_free',
-  # 'model_free-tightened',
-  # 'gradient',
-  # 'gradient-tightened',
-  # 'dpcc-r',
+  # Figure 2, Table 1 and Figure 3:
+  'dpcc-r',
   'dpcc-r-tightened',
-  # 'dpcc-c',
+  'dpcc-c',
   'dpcc-c-tightened',
-  # 'dpcc-t',
+  'dpcc-t',
   'dpcc-t-tightened',
-  # 'dpcc-c-tightened-dt0p25',
-  # 'dpcc-c-tightened-dt0p5',
-  # 'dpcc-c-tightened-dt2p0',
-  # 'dpcc-c-tightened-dt4p0',
+  # Table 1:
+  'diffuser',
+  'gradient',
+  'gradient-tightened',
+  'post_processing',
+  'post_processing-tightened',
+  'model_free',
+  'model_free-tightened',
+  # Table 2:
+  'dpcc-c-tightened-dt0p25',
+  'dpcc-c-tightened-dt0p5',
+  'dpcc-c-tightened-dt2p0',
+  'dpcc-c-tightened-dt4p0',
 ]
 projection_cost: 'pos_vel'
 constraint_types: [

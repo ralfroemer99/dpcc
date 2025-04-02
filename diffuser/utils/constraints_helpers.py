@@ -88,14 +88,16 @@ def plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits, flip_x
             elif slope > 0 and constraint[2] == 'below':
                 mat[2] = np.array([ax_limits[0][0], ax_limits[1][1]])
                 mat_enlarged[2] = np.array([ax_limits[0][0], ax_limits[1][1]])
-                mat_enlarged[:2, 0] += enlarge_constraints * np.sin(np.arctan(slope))
+                mat_enlarged[0, 1] -= enlarge_constraints / np.cos(np.arctan(slope))
+                mat_enlarged[1, 0] += enlarge_constraints * np.sin(np.arctan(slope))
             elif slope < 0 and constraint[2] == 'above':
                 mat[2] = np.array([ax_limits[0][0], ax_limits[1][0]])
                 mat_enlarged[2] = np.array([ax_limits[0][0], ax_limits[1][0]])
             elif slope < 0 and constraint[2] == 'below':
                 mat[2] = np.array([ax_limits[0][1], ax_limits[1][1]])
                 mat_enlarged[2] = np.array([ax_limits[0][1], ax_limits[1][1]])
-                mat_enlarged[:2, 0] += enlarge_constraints * np.sin(np.arctan(slope))
+                mat_enlarged[0, 1] -= enlarge_constraints / np.cos(np.arctan(slope))
+                mat_enlarged[1, 0] += enlarge_constraints * np.sin(np.arctan(slope))
         if flip_xy:
             mat = mat[:, ::-1]
         ax.add_patch(matplotlib.patches.Polygon(mat, color='b', alpha=0.2))

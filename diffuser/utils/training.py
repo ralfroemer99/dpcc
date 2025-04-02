@@ -68,17 +68,17 @@ class Trainer(object):
         self.train_test_split = train_test_split
         if train_test_split == 1:
             self.train_dataloader = cycle(torch.utils.data.DataLoader(
-                self.dataset, batch_size=train_batch_size, num_workers=1, shuffle=True, pin_memory=True
+                self.dataset, batch_size=train_batch_size, num_workers=2, shuffle=True, pin_memory=True
             ))
         else:
             n_train = int(train_test_split * len(self.dataset))
             n_test = len(self.dataset) - n_train
             train_dataset, test_dataset = torch.utils.data.random_split(self.dataset, [n_train, n_test])
             self.train_dataloader = cycle(torch.utils.data.DataLoader(
-                train_dataset, batch_size=train_batch_size, num_workers=1, shuffle=True, pin_memory=True
+                train_dataset, batch_size=train_batch_size, num_workers=2, shuffle=True, pin_memory=True
             ))
             self.test_dataloader = cycle(torch.utils.data.DataLoader(
-                test_dataset, batch_size=train_batch_size, num_workers=1, shuffle=True, pin_memory=True
+                test_dataset, batch_size=train_batch_size, num_workers=2, shuffle=True, pin_memory=True
             ))
             self.best_test_loss = np.inf
         self.train_losses = []
