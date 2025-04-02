@@ -22,7 +22,7 @@ obs_indices = {'x_des': 0, 'y_des': 1, 'x': 2, 'y': 3}
 obs_dim = 4
 action_dim = 2
 
-data_directory = 'environments/dataset/data/data/avoiding/data'
+data_directory = 'environments/dataset/data/avoiding/data'
 inputs = []
 actions = []
 path_lengths = []
@@ -59,9 +59,10 @@ actions = np.concatenate(actions)
 
 ## -------------- Plot all trajectories in the x-y plane -------------- ##
 fig, ax = plt.subplots(figsize=(9, 10))
+# for i in range(1):
 for i in range(observations.shape[0]):
-    x_coords = observations[i, :path_lengths[i], 0]
-    y_coords = observations[i, :path_lengths[i], 1]
+    x_coords = observations[i, :path_lengths[i], 2]
+    y_coords = observations[i, :path_lengths[i], 3]
     ax.plot(x_coords, y_coords)
 
 utils.plot_environment_constraints(exp, ax)
@@ -72,7 +73,7 @@ ax.set_facecolor([1, 1, 0.9])
 ax.set_xlim(ax_limits[0])
 ax.set_ylim(ax_limits[1])
 fig.savefig('figures/avoiding_data.png', bbox_inches='tight')
-# plt.savefig('avoiding_data.pdf', bbox_inches='tight', format='pdf')
+plt.savefig('figures/avoiding_data.pdf', bbox_inches='tight', format='pdf')
 
 # ------------ Check how many trajectories satisfy the constraints ------------ #
 fig, axes = plt.subplots(1, 3, figsize=(30, 10))
@@ -137,7 +138,7 @@ for j, halfspace_variant in enumerate(halfspace_variants):
     ax.set_xlim(ax_limits[0])
     ax.set_ylim(ax_limits[1])
 fig.savefig('figures/avoiding_constraints.png', bbox_inches='tight')
-# fig.savefig('avoiding_constraints.pdf', bbox_inches='tight', format='pdf')
+fig.savefig('figures/avoiding_constraints.pdf', bbox_inches='tight', format='pdf')
 
 # Plot velocities
 fig, ax = plt.subplots(1, 2, figsize=(10, 6))

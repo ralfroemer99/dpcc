@@ -348,10 +348,11 @@ for exp in exps:
             ax.set_ylim(ax_limits[1])
             ax.set_facecolor([1, 1, 0.9])
             utils.plot_environment_constraints(exp, ax)
-            if 'halfspace' in constraint_types: utils.plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits)
+            if 'halfspace' in constraint_types: utils.plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits, enlarge_constraints=enlarge_constraints)
             if 'obstacles' in constraint_types:
                 for constraint in obstacle_constraints:
                     ax.add_patch(matplotlib.patches.Circle(constraint['center'], constraint['radius'], color='b', alpha=0.2))
+                    ax.add_patch(matplotlib.patches.Circle(constraint['center'], constraint['radius'] + enlarge_constraints, color='b', alpha=0.1, linestyle='--'))
             fig.savefig(f'{path}/{projection_variants[variant_idx]}.png', bbox_inches='tight')
             fig.savefig(f'{path}/{projection_variants[variant_idx]}.pdf', bbox_inches='tight', format='pdf')
             variant_idx += 1

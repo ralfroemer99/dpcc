@@ -71,9 +71,10 @@ def plot_environment_constraints(exp, ax, flip_xy=False):
             ax.add_patch(matplotlib.patches.Circle(center, 0.025, color='r'))
         ax.plot([0.2, 0.8], [0.35, 0.35], color=[0.4, 1, 0.4], linewidth=5)
 
-def plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits, flip_xy=False):
+def plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits, flip_xy=False, enlarge_constraints=0):
     for constraint in polytopic_constraints:
         mat = np.vstack((constraint[:2], np.zeros(2)))
+        mat_enlarged = np.vstack((constraint[:2], np.zeros(2)))
         if 'pointmaze' in exp:
             mat[2] = np.array([1.5, -1.5]) if constraint[2] == 'above' else np.array([1.5, 1.5])
         elif 'antmaze' in exp:
@@ -83,12 +84,19 @@ def plot_halfspace_constraints(exp, polytopic_constraints, ax, ax_limits, flip_x
             slope = (constraint[1][1] - constraint[0][1]) / (constraint[1][0] - constraint[0][0])
             if slope > 0 and constraint[2] == 'above':
                 mat[2] = np.array([ax_limits[0][1], ax_limits[1][0]])
+                mat_enlarged[2] = np.array([ax_limits[0][1], ax_limits[1][0]])
             elif slope > 0 and constraint[2] == 'below':
                 mat[2] = np.array([ax_limits[0][0], ax_limits[1][1]])
+                mat_enlarged[2] = np.array([ax_limits[0][0], ax_limits[1][1]])
+                mat_enlarged[:2, 0] += enlarge_constraints * np.sin(np.arctan(slope))
             elif slope < 0 and constraint[2] == 'above':
                 mat[2] = np.array([ax_limits[0][0], ax_limits[1][0]])
+                mat_enlarged[2] = np.array([ax_limits[0][0], ax_limits[1][0]])
             elif slope < 0 and constraint[2] == 'below':
                 mat[2] = np.array([ax_limits[0][1], ax_limits[1][1]])
+                mat_enlarged[2] = np.array([ax_limits[0][1], ax_limits[1][1]])
+                mat_enlarged[:2, 0] += enlarge_constraints * np.sin(np.arctan(slope))
         if flip_xy:
             mat = mat[:, ::-1]
         ax.add_patch(matplotlib.patches.Polygon(mat, color='b', alpha=0.2))
+        ax.add_patch(matplotlib.patches.Polygon(mat_enlarged, color='b', alpha=0.1, linestyle='--'))
