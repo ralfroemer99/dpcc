@@ -52,9 +52,9 @@ base = {
         'exp_name': watch(args_to_watch),
 
         ## training
-        'n_steps_per_epoch': 1000,      # 1000
-        'n_train_steps': 5e4,           # 1e5
-        'batch_size': 64,
+        'n_steps_per_epoch': 1000,
+        'n_train_steps': 1e5,
+        'batch_size': 8,
         'learning_rate': 1e-4,
         'gradient_accumulate_every': 2,
         'ema_decay': 0.995,
