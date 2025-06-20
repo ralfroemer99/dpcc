@@ -27,3 +27,19 @@ To evaluate DPCC and reproduce the results reported in the paper, run:
 python scripts/eval.py
 python scripts/load_results.py
 ```
+
+## Citation
+
+If you find this work useful, please cite our paper:
+
+```bibtex
+@InProceedings{romer2025diffusion,
+  title = 	 {Diffusion Predictive Control with Constraints},
+  author =       {R{\"o}mer, Ralf and Rohr, Alexander von and Schoellig, Angela},
+  booktitle = 	 {Proceedings of the 7th Annual Learning for Dynamics \&amp; Control Conference},
+  pages = 	 {791--803},
+  year = 	 {2025},
+  publisher =    {PMLR},
+}
+
+```
