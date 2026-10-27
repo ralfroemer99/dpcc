@@ -23,7 +23,7 @@ action_indices: {
 }
 
 # Policy
-diffusion_timestep_threshold: 0.5
+diffusion_timestep_threshold: 1.0
 
 # Projection 
 projection_variants: [

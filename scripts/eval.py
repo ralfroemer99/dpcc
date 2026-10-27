@@ -43,6 +43,7 @@ for exp in exps:
         ax_limits = config['ax_limits'][exp]
         enlarge_constraints = config['enlarge_constraints'][robot_name]
         dt = config['dt'][robot_name]
+        diffusion_timestep_threshold = config['diffusion_timestep_threshold']
 
         class Parser(utils.Parser):
             dataset: str = exp
@@ -127,6 +128,7 @@ for exp in exps:
                 print(f'------------------------Running {exp} - {halfspace_variant} - {variant} ({seed})----------------------------')
 
                 gradient = True if 'gradient' in variant else False
+                threshold = 0 if 'post_processing' in variant else diffusion_timestep_threshold
 
                 if 'model_free' in variant and 'tightened' in variant:
                     constraints = constraint_list_without_prior_tightened
@@ -148,8 +150,11 @@ for exp in exps:
                     delta_t = 4.0 * dt
 
                 # Create projector
-                projector = Projector(horizon=args.horizon, transition_dim=trajectory_dim, action_dim=action_dim, goal_dim=diffusion.goal_dim, constraint_list=constraints, normalizer=dataset.normalizer, 
-                                        gradient=gradient, gradient_weights=[1, 0.5, 2], variant=diffuser_variant, dt=delta_t, cost_dims=None, device=args.device, solver='scipy')
+                projector = Projector(horizon=args.horizon, transition_dim=trajectory_dim, action_dim=action_dim, 
+                                      goal_dim=diffusion.goal_dim, constraint_list=constraints, normalizer=dataset.normalizer, 
+                                      gradient=gradient, gradient_weights=[1, 0.5, 2], variant=diffuser_variant, dt=delta_t, 
+                                      cost_dims=None, device=args.device, solver='scipy', 
+                                      diffusion_timestep_threshold=threshold)
                 projector = None if variant == 'diffuser' else projector
 
                 trajectory_selection = 'random'
